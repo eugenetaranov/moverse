@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Moverse",
+    "slug": "moverse",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "me.taranov.moverse"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Moverse uses the camera to scan item and box QR labels and to photograph items."
+        }
+      ]
+    ]
+  }
+}

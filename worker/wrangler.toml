@@ -1,0 +1,17 @@
+name = "moverse-worker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# Non-secret config. Override table/field names here if your Airtable base differs.
+[vars]
+ANTHROPIC_MODEL = "claude-haiku-4-5"
+AIRTABLE_ITEMS_TABLE = "Items"
+AIRTABLE_BOXES_TABLE = "Boxes"
+AIRTABLE_PHOTO_FIELD = "Photo"
+
+# Secrets are NOT stored here. Set them with:
+#   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put AIRTABLE_TOKEN
+#   wrangler secret put AIRTABLE_BASE_ID
+#   wrangler secret put APP_SECRET          # optional shared header the app sends
+# For local dev, copy .dev.vars.example -> .dev.vars and fill it in.

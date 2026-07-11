@@ -1,0 +1,9 @@
+{
+  "name": "moverse-labels",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

@@ -1,0 +1,57 @@
+name: Android APK
+
+# Builds a sideloadable Android APK from the Expo app in mobile/.
+# Fully self-contained: `expo prebuild` generates the native android/ project,
+# then Gradle assembles a release APK signed with the generated debug keystore
+# (fine for personal sideloading — no keystore secrets required). The APK is
+# uploaded as a downloadable workflow artifact.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Provides the Android SDK + accepts licenses so AGP can auto-download
+      # the compileSdk platform / build-tools the RN build needs.
+      - uses: android-actions/setup-android@v3
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Generate native android/ project (expo prebuild)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: mobile/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moverse-android-apk
+          path: mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
