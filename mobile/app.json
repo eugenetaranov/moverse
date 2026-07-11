@@ -15,7 +15,15 @@
           "cameraPermission": "Moverse uses the camera to scan item and box QR labels and to photograph items."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.9.25"
+          }
+        }
+      ]
     ]
   }
 }
