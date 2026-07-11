@@ -14,7 +14,8 @@
         {
           "cameraPermission": "Moverse uses the camera to scan item and box QR labels and to photograph items."
         }
-      ]
+      ],
+      "expo-asset"
     ]
   }
 }
