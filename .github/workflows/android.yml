@@ -3,8 +3,9 @@ name: Android APK
 # Builds a sideloadable Android APK from the Expo app in mobile/.
 # Fully self-contained: `expo prebuild` generates the native android/ project,
 # then Gradle assembles a release APK signed with the generated debug keystore
-# (fine for personal sideloading — no keystore secrets required). The APK is
-# uploaded as a downloadable workflow artifact.
+# (fine for personal sideloading — no keystore secrets required). Each build is
+# published to the rolling "android-latest" GitHub Release (permanent install
+# link) and also uploaded as a workflow artifact.
 
 on:
   push:
@@ -13,6 +14,10 @@ on:
       - "mobile/**"
       - ".github/workflows/android.yml"
   workflow_dispatch: {} # allow manual runs from the Actions tab
+
+# Needed so the build can publish the APK to a GitHub Release.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -49,9 +54,35 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleRelease --no-daemon
 
+      # Stable, human-readable name so the Release download URL never changes.
+      # Also surface the app version for the Release notes. Run from the repo root
+      # (the job default working-directory is mobile/) so paths are unambiguous.
+      - name: Rename APK
+        working-directory: ${{ github.workspace }}
+        run: |
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk moverse.apk
+          echo "APP_VERSION=$(node -p "require('./mobile/app.json').expo.version")" >> "$GITHUB_ENV"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: moverse-android-apk
-          path: mobile/android/app/build/outputs/apk/release/*.apk
+          path: moverse.apk
           if-no-files-found: error
+
+      # Publish to a rolling "android-latest" pre-release so the phone can install
+      # straight from a permanent link:
+      #   https://github.com/<owner>/moverse/releases/download/android-latest/moverse.apk
+      # The asset is replaced each build; the URL stays the same.
+      - name: Publish APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: Android APK (latest)
+          body: |
+            Latest sideloadable Android build (debug-signed, for personal testing).
+            App version ${{ env.APP_VERSION }} · commit ${{ github.sha }}.
+            Install: download moverse.apk on your phone, allow "install unknown apps", tap to install.
+          prerelease: true
+          make_latest: false
+          files: moverse.apk

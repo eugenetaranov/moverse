@@ -13,7 +13,13 @@ Direct NIIMBOT B1 Bluetooth printing is out of scope for v1 — labels are pre-p
 
 ## Getting it running
 
-See **[SETUP.md](./SETUP.md)** — it covers the Airtable base, deploying the Worker with your secrets, printing labels, and running the app. The code is complete; those steps need your accounts and hardware.
+See **[SETUP.md](./SETUP.md)** — it covers the Airtable base, deploying the backend with your secrets, printing labels, and running the app. The code is complete; those steps need your accounts and hardware.
+
+## Install a test build
+
+GitHub Actions builds a sideloadable APK on every push to `main`. Open the permanent release link on your Android phone, allow "install unknown apps", and tap to install (see [SETUP.md §6](./SETUP.md)):
+
+**https://github.com/eugenetaranov/moverse/releases/download/android-latest/moverse.apk**
 
 ## Data flow
 

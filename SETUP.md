@@ -76,8 +76,18 @@ npx expo start            # scan the QR with Expo Go on your Android phone
 ```
 Then run one item end to end (task 5.1): scan `ITM-*` → photo → confirm description → scan `BOX-*` → save, and confirm it shows up in the Airtable Gallery view.
 
-Build a standalone APK (task 5.4):
-```sh
-npm install -g eas-cli
-eas build -p android --profile preview
-```
+## 6. Install a standalone APK (no computer needed)
+
+GitHub Actions builds a sideloadable APK on every push to `main` (and on-demand via the
+**Run workflow** button on the *Android APK* workflow). Each successful build is published to a
+rolling GitHub Release, so the download link never changes:
+
+**https://github.com/eugenetaranov/moverse/releases/download/android-latest/moverse.apk**
+
+On the Android phone:
+1. Open that link in the phone's browser and download `moverse.apk`.
+2. Tap it; when prompted, allow your browser to **install unknown apps** (one-time).
+3. Install and open **Moverse**. It talks to the production backend at
+   `https://moverse-chi.vercel.app` (already baked into the build).
+
+The APK is debug-keystore signed — fine for personal sideloading; not for the Play Store.
