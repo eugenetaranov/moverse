@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,19 +11,15 @@ import {
   View,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import {
-  CameraView,
-  useCameraPermissions,
-  type CameraView as CameraViewType,
-} from "expo-camera";
-import * as ImageManipulator from "expo-image-manipulator";
+import { useCameraPermissions } from "expo-camera";
 import Scanner from "./src/Scanner";
+import Capture, { type CaptureResult } from "./src/Capture";
 import { describe, save } from "./src/api";
 import { classify } from "./src/labels";
 import { ITEM_PREFIX, BOX_PREFIX } from "./src/config";
+import { buzzOk, buzzErr } from "./src/haptics";
 
-// The in-progress item. Everything lives here so any field can be filled or
-// corrected in any order — by scanning or by typing.
+// The in-progress item. Any field can be filled or corrected in any order.
 interface Draft {
   itemCode: string;
   boxCode: string;
@@ -31,17 +27,15 @@ interface Draft {
   photoUri: string;
   photoBase64: string;
 }
+const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photoUri: "", photoBase64: "" };
 
-const EMPTY: Draft = {
-  itemCode: "",
-  boxCode: "",
-  description: "",
-  photoUri: "",
-  photoBase64: "",
-};
-
-// Full-screen overlays; "home" is the editable hub.
-type Mode = "home" | "scanItem" | "scanBox" | "photo";
+// Full-screen camera surfaces; "home" is the hub.
+//  capture  = continuous scan-item -> photo
+//  photo    = retake photo only
+//  scanItem = re-scan the item code only
+//  scanBox  = set / change the locked box
+type Mode = "home" | "capture" | "photo" | "scanItem" | "scanBox";
+type DescribeState = "idle" | "loading" | "off" | "done";
 
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -50,15 +44,13 @@ export default function App() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [past, setPast] = useState<Draft[]>([]);
   const [future, setFuture] = useState<Draft[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [describeState, setDescribeState] = useState<DescribeState>("idle");
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState("");
+  const [count, setCount] = useState(0);
 
-  const cameraRef = useRef<CameraViewType>(null);
-
-  // Snapshot-based edit for discrete actions (scans, photo, auto-describe,
-  // clear) so Undo/Redo can walk them. Free-text typing edits the draft
-  // directly and is not pushed onto the history.
+  // Snapshot-based edit for discrete actions (scans, photo, clear) so Undo/Redo
+  // can walk them. Free-text typing edits the draft directly (not in history).
   function commit(patch: Partial<Draft>) {
     setPast((p) => [...p, draft].slice(-40));
     setFuture([]);
@@ -81,25 +73,47 @@ export default function App() {
     setDraft(next);
     setFuture((f) => f.slice(1));
   }
-
   function clearDraft() {
-    commit(EMPTY);
-    setLastSaved("");
+    commit({ itemCode: "", description: "", photoUri: "", photoBase64: "" });
+    setDescribeState("idle");
   }
 
   async function autoDescribe(b64: string) {
     if (!b64) return;
-    setBusy(true);
+    setDescribeState("loading");
     try {
       const text = await describe(b64);
-      // Direct set (not commit) so it doesn't clobber the undo stack mid-typing;
-      // the photo capture that triggered it is already an undo point.
-      setDraft((d) => ({ ...d, description: text }));
+      if (text && text.trim()) {
+        setDraft((d) => ({ ...d, description: text.trim() }));
+        setDescribeState("done");
+      } else {
+        setDescribeState("off");
+      }
     } catch {
-      // Leave whatever is there; user can type it in. (/describe needs the
-      // Anthropic key set on the backend.)
-    } finally {
-      setBusy(false);
+      // /describe needs the Anthropic key on the backend; type it in instead.
+      setDescribeState("off");
+    }
+  }
+
+  function onCaptureDone(r: CaptureResult) {
+    const patch: Partial<Draft> = { photoUri: r.photoUri, photoBase64: r.photoBase64 };
+    if (r.itemCode) patch.itemCode = r.itemCode;
+    commit(patch);
+    setMode("home");
+    void autoDescribe(r.photoBase64);
+  }
+
+  function onScanBox(code: string) {
+    const prev = draft.boxCode.trim();
+    if (prev && prev !== code) {
+      setMode("home");
+      Alert.alert("Switch box?", `Now packing into ${code} instead of ${prev}?`, [
+        { text: "Keep " + prev, style: "cancel" },
+        { text: "Switch", onPress: () => commit({ boxCode: code }) },
+      ]);
+    } else {
+      commit({ boxCode: code });
+      setMode("home");
     }
   }
 
@@ -112,14 +126,16 @@ export default function App() {
         description: draft.description.trim(),
         imageBase64: draft.photoBase64,
       });
+      buzzOk();
       setLastSaved(`${draft.itemCode.trim()} → ${draft.boxCode.trim()}`);
-      // Keep the box so the next item can go into the same box quickly; clear
-      // the rest. This is a fresh draft, so reset history too.
-      const keepBox = draft.boxCode;
-      setDraft({ ...EMPTY, boxCode: keepBox });
+      setCount((c) => c + 1);
+      // Keep the locked box for the next item; reset the rest + history.
+      setDraft({ ...EMPTY, boxCode: draft.boxCode });
       setPast([]);
       setFuture([]);
+      setDescribeState("idle");
     } catch (e) {
+      buzzErr();
       Alert.alert("Save failed", String(e) + "\nYour entry is kept — try again.");
     } finally {
       setSaving(false);
@@ -146,7 +162,20 @@ export default function App() {
     );
   }
 
-  // ---- overlay: scan the item label ----
+  // ---- camera surfaces ----
+  if (mode === "capture") {
+    return <Capture startPhase="item" onDone={onCaptureDone} onCancel={() => setMode("home")} />;
+  }
+  if (mode === "photo") {
+    return (
+      <Capture
+        startPhase="photo"
+        itemCode={draft.itemCode}
+        onDone={onCaptureDone}
+        onCancel={() => setMode("home")}
+      />
+    );
+  }
   if (mode === "scanItem") {
     return (
       <Scanner
@@ -157,96 +186,51 @@ export default function App() {
           setMode("home");
         }}
         onReject={(m) => Alert.alert("Wrong label", m)}
+        onCancel={() => setMode("home")}
       />
     );
   }
-
-  // ---- overlay: scan the destination box ----
   if (mode === "scanBox") {
     return (
       <Scanner
         expect="box"
         prompt="Scan the box/suitcase QR label (BOX-…)"
-        onScan={(code) => {
-          commit({ boxCode: code });
-          setMode("home");
-        }}
+        onScan={onScanBox}
         onReject={(m) => Alert.alert("Wrong label", m)}
+        onCancel={() => setMode("home")}
       />
-    );
-  }
-
-  // ---- overlay: take a photo ----
-  if (mode === "photo") {
-    async function takePhoto() {
-      const cam = cameraRef.current;
-      if (!cam) return;
-      setBusy(true);
-      try {
-        const shot = await cam.takePictureAsync({ quality: 0.8 });
-        if (!shot?.uri) throw new Error("no photo");
-        const out = await ImageManipulator.manipulateAsync(
-          shot.uri,
-          [{ resize: { width: 1024 } }],
-          {
-            compress: 0.6,
-            format: ImageManipulator.SaveFormat.JPEG,
-            base64: true,
-          },
-        );
-        commit({ photoUri: out.uri, photoBase64: out.base64 ?? "" });
-        setMode("home");
-        void autoDescribe(out.base64 ?? "");
-      } catch (e) {
-        Alert.alert("Camera error", String(e));
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    return (
-      <View style={styles.fill}>
-        <CameraView ref={cameraRef} style={styles.fill} facing="back" />
-        <View style={styles.bottomBar}>
-          <Text style={styles.barLabel}>
-            {draft.itemCode ? `Item ${draft.itemCode}` : "New item"}
-          </Text>
-          <TouchableOpacity
-            style={styles.shutter}
-            onPress={takePhoto}
-            disabled={busy}
-          />
-          <TouchableOpacity onPress={() => setMode("home")}>
-            <Text style={styles.barHint}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-        <StatusBar style="light" />
-      </View>
     );
   }
 
   // ---- the home hub ----
   const itemBad = draft.itemCode.trim() !== "" && classify(draft.itemCode) !== "item";
+  const itemOk = draft.itemCode.trim() !== "" && !itemBad;
   const boxBad = draft.boxCode.trim() !== "" && classify(draft.boxCode) !== "box";
-  const canSave =
-    !saving && draft.itemCode.trim() !== "" && draft.boxCode.trim() !== "";
+  const boxOk = draft.boxCode.trim() !== "" && !boxBad;
+  const draftEmpty = draft.itemCode.trim() === "" && draft.photoUri === "";
+  const canSave = !saving && itemOk && boxOk;
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.hubContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Text style={styles.title}>Moverse</Text>
-          <View style={styles.row}>
-            <SmallButton title="↶ Undo" onPress={undo} disabled={past.length === 0} />
-            <View style={{ width: 8 }} />
-            <SmallButton title="↷ Redo" onPress={redo} disabled={future.length === 0} />
-          </View>
-        </View>
+      {/* TOP: box-lock banner + status */}
+      <TouchableOpacity
+        style={[styles.banner, boxOk ? styles.bannerOk : styles.bannerWarn]}
+        onPress={() => setMode("scanBox")}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.bannerText}>
+          {boxOk ? `📦 Packing into ${draft.boxCode.trim()}` : "📦 No box — tap to scan"}
+        </Text>
+        <Text style={styles.bannerAction}>{boxOk ? "Change" : "Scan"}</Text>
+      </TouchableOpacity>
+      <Text style={styles.status}>
+        {lastSaved ? `Saved ${lastSaved} ✓` : "Ready"}
+        {count > 0 ? ` · ${count} packed` : ""}
+      </Text>
 
-        {lastSaved ? <Text style={styles.saved}>Saved {lastSaved} ✓</Text> : null}
-
-        {/* Photo */}
-        <Text style={styles.fieldLabel}>Photo</Text>
+      {/* MIDDLE: correction / exception surface */}
+      <ScrollView contentContainerStyle={styles.body2} keyboardShouldPersistTaps="handled">
+        <FieldLabel text="Photo" done={draft.photoUri !== ""} />
         <View style={styles.photoRow}>
           {draft.photoUri ? (
             <Image source={{ uri: draft.photoUri }} style={styles.thumb} />
@@ -256,15 +240,14 @@ export default function App() {
             </View>
           )}
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <PrimaryButton
+            <SecondaryButton
               title={draft.photoUri ? "Retake photo" : "Take photo"}
               onPress={() => setMode("photo")}
             />
           </View>
         </View>
 
-        {/* Item */}
-        <Text style={styles.fieldLabel}>Item code</Text>
+        <FieldLabel text="Item code" done={itemOk} />
         <View style={styles.inputRow}>
           <TextInput
             style={[styles.input, styles.flex, itemBad && styles.inputBad]}
@@ -275,58 +258,55 @@ export default function App() {
             autoCorrect={false}
           />
           <View style={{ width: 8 }} />
-          <SmallButton title="Scan" onPress={() => setMode("scanItem")} />
+          <SecondaryButton title="Scan" onPress={() => setMode("scanItem")} />
         </View>
         {itemBad ? <Text style={styles.warn}>Expected an {ITEM_PREFIX} code</Text> : null}
 
-        {/* Description / notes */}
-        <Text style={styles.fieldLabel}>Description / notes</Text>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, styles.flex, { minHeight: 64 }]}
-            value={draft.description}
-            onChangeText={(t) => edit({ description: t })}
-            placeholder="Describe the item, or add a note…"
-            multiline
-          />
-        </View>
-        <View style={styles.row}>
-          {busy ? (
-            <ActivityIndicator />
-          ) : (
-            <SmallButton
-              title="✨ Auto-describe"
-              onPress={() => autoDescribe(draft.photoBase64)}
-              disabled={!draft.photoBase64}
-            />
-          )}
-        </View>
-
-        {/* Box */}
-        <Text style={styles.fieldLabel}>Box / suitcase</Text>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, styles.flex, boxBad && styles.inputBad]}
-            value={draft.boxCode}
-            onChangeText={(t) => edit({ boxCode: t })}
-            placeholder={`${BOX_PREFIX}0001`}
-            autoCapitalize="characters"
-            autoCorrect={false}
-          />
-          <View style={{ width: 8 }} />
-          <SmallButton title="Scan" onPress={() => setMode("scanBox")} />
-        </View>
-        {boxBad ? <Text style={styles.warn}>Expected a {BOX_PREFIX} code</Text> : null}
-
-        <View style={{ height: 20 }} />
-        <PrimaryButton
-          title={saving ? "Saving…" : "Save item"}
-          onPress={doSave}
-          disabled={!canSave}
+        <FieldLabel text="Description / notes" done={draft.description.trim() !== ""} />
+        <TextInput
+          style={[styles.input, { minHeight: 64 }]}
+          value={draft.description}
+          onChangeText={(t) => edit({ description: t })}
+          placeholder="Describe the item, or add a note…"
+          multiline
         />
-        <View style={{ height: 10 }} />
-        <SmallButton title="Clear / new item" onPress={clearDraft} />
+        <View style={styles.aiRow}>
+          <Text style={styles.aiState}>
+            {describeState === "loading"
+              ? "✨ Describing…"
+              : describeState === "off"
+                ? "AI off — type it in"
+                : describeState === "done"
+                  ? "✨ AI suggestion — edit if needed"
+                  : ""}
+          </Text>
+          <SecondaryButton
+            title="✨ Auto-describe"
+            onPress={() => autoDescribe(draft.photoBase64)}
+            disabled={!draft.photoBase64 || describeState === "loading"}
+          />
+        </View>
+
+        <View style={{ height: 16 }} />
+        <SecondaryButton title="Clear / new item" onPress={clearDraft} />
       </ScrollView>
+
+      {/* BOTTOM: fixed action bar (outside the scroll) */}
+      <View style={styles.actionBar}>
+        <SmallSquare title="↶" onPress={undo} disabled={past.length === 0} />
+        <SmallSquare title="↷" onPress={redo} disabled={future.length === 0} />
+        <View style={{ width: 10 }} />
+        {draftEmpty ? (
+          <PrimaryButton title="Scan item ▶" onPress={() => setMode("capture")} style={styles.flex} />
+        ) : (
+          <PrimaryButton
+            title={saving ? "Saving…" : boxOk ? `Save → ${draft.boxCode.trim()}` : "Save"}
+            onPress={doSave}
+            disabled={!canSave}
+            style={styles.flex}
+          />
+        )}
+      </View>
       <StatusBar style="dark" />
     </View>
   );
@@ -335,19 +315,28 @@ export default function App() {
 function Center({ children }: { children: React.ReactNode }) {
   return <View style={styles.center}>{children}</View>;
 }
-
+function FieldLabel({ text, done }: { text: string; done: boolean }) {
+  return (
+    <Text style={styles.fieldLabel}>
+      {text}
+      {done ? "  ✓" : ""}
+    </Text>
+  );
+}
 function PrimaryButton({
   title,
   onPress,
   disabled,
+  style,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
+  style?: object;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.primaryBtn, disabled && styles.btnDisabled]}
+      style={[styles.primaryBtn, disabled && styles.btnDisabled, style]}
       onPress={onPress}
       disabled={disabled}
     >
@@ -355,8 +344,7 @@ function PrimaryButton({
     </TouchableOpacity>
   );
 }
-
-function SmallButton({
+function SecondaryButton({
   title,
   onPress,
   disabled,
@@ -367,19 +355,38 @@ function SmallButton({
 }) {
   return (
     <TouchableOpacity
-      style={[styles.smallBtn, disabled && styles.btnDisabled]}
+      style={[styles.secondaryBtn, disabled && styles.btnDisabled]}
       onPress={onPress}
       disabled={disabled}
     >
-      <Text style={styles.smallBtnText}>{title}</Text>
+      <Text style={styles.secondaryBtnText}>{title}</Text>
+    </TouchableOpacity>
+  );
+}
+function SmallSquare({
+  title,
+  onPress,
+  disabled,
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.square, disabled && styles.btnDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Text style={styles.squareText}>{title}</Text>
     </TouchableOpacity>
   );
 }
 
+const MIN_TAP = 48;
+
 const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: "#000" },
-  screen: { flex: 1, backgroundColor: "#fff" },
-  hubContent: { padding: 20, paddingTop: 56, paddingBottom: 48 },
+  screen: { flex: 1, backgroundColor: "#fff", paddingTop: 44 },
   center: {
     flex: 1,
     alignItems: "center",
@@ -387,83 +394,86 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: "#fff",
   },
-  header: {
+  banner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginHorizontal: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    borderRadius: 14,
   },
-  title: { fontSize: 28, fontWeight: "800" },
-  row: { flexDirection: "row", alignItems: "center" },
+  bannerOk: { backgroundColor: "#111827" },
+  bannerWarn: { backgroundColor: "#8a1c1c" },
+  bannerText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  bannerAction: { color: "#9fb3d1", fontSize: 14, fontWeight: "700" },
+  status: { color: "#1b7a3d", fontWeight: "600", marginTop: 8, marginBottom: 4, marginHorizontal: 18 },
+  body2: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 24 },
   flex: { flex: 1 },
-  saved: {
-    backgroundColor: "#e7f6ec",
-    color: "#1b7a3d",
-    fontWeight: "600",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-    overflow: "hidden",
-  },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#666",
+    color: "#555",
     marginTop: 16,
     marginBottom: 6,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   photoRow: { flexDirection: "row", alignItems: "center" },
-  thumb: { width: 84, height: 84, borderRadius: 10, backgroundColor: "#eee" },
+  thumb: { width: 84, height: 84, borderRadius: 10, backgroundColor: "#e5e5e5" },
   thumbEmpty: { alignItems: "center", justifyContent: "center" },
-  thumbEmptyText: { color: "#999", fontSize: 12 },
+  thumbEmptyText: { color: "#666", fontSize: 12 },
   inputRow: { flexDirection: "row", alignItems: "flex-start" },
   input: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#bbb",
     borderRadius: 10,
     padding: 12,
     fontSize: 16,
     backgroundColor: "#fafafa",
   },
-  inputBad: { borderColor: "#e0a800", backgroundColor: "#fffaf0" },
-  warn: { color: "#b8860b", fontSize: 12, marginTop: 4 },
+  inputBad: { borderColor: "#b45309", backgroundColor: "#fff7ed" },
+  warn: { color: "#b45309", fontSize: 13, marginTop: 4, fontWeight: "600" },
+  aiRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 },
+  aiState: { color: "#555", fontSize: 13, flex: 1 },
   body: { fontSize: 15, color: "#333", textAlign: "center", marginVertical: 2 },
   primaryBtn: {
     backgroundColor: "#111",
-    paddingVertical: 14,
+    minHeight: 56,
+    paddingHorizontal: 18,
     borderRadius: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
-  primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  smallBtn: {
+  primaryBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  secondaryBtn: {
     backgroundColor: "#eee",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    minHeight: MIN_TAP,
+    paddingHorizontal: 16,
     borderRadius: 10,
     alignItems: "center",
+    justifyContent: "center",
   },
-  smallBtnText: { color: "#111", fontSize: 14, fontWeight: "600" },
-  btnDisabled: { opacity: 0.4 },
-  bottomBar: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+  secondaryBtnText: { color: "#111", fontSize: 15, fontWeight: "600" },
+  square: {
+    width: MIN_TAP,
+    height: MIN_TAP,
+    borderRadius: 10,
+    marginRight: 6,
+    backgroundColor: "#eee",
     alignItems: "center",
-    paddingVertical: 24,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "center",
   },
-  barLabel: { color: "#fff", marginBottom: 12, fontWeight: "600" },
-  barHint: { color: "#eee", marginTop: 12 },
-  shutter: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  squareText: { fontSize: 20, fontWeight: "700", color: "#111" },
+  btnDisabled: { opacity: 0.35 },
+  actionBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 28,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#ddd",
     backgroundColor: "#fff",
-    borderWidth: 4,
-    borderColor: "#bbb",
   },
 });
