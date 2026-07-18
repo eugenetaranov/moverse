@@ -24,11 +24,27 @@ export interface SavePayload {
   imageBase64: string;
 }
 
+// Thrown when the backend rejects a save because the item code already exists.
+export class DuplicateItemError extends Error {
+  constructor() {
+    super("duplicate_item");
+    this.name = "DuplicateItemError";
+  }
+}
+
 export async function save(payload: SavePayload): Promise<void> {
   const res = await fetch(`${WORKER_URL}/save`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`save failed (${res.status})`);
+  if (res.ok) return;
+  let code = "";
+  try {
+    code = ((await res.json()) as { error?: string }).error ?? "";
+  } catch {
+    // non-JSON error body; fall through to the generic error
+  }
+  if (res.status === 409 || code === "duplicate_item") throw new DuplicateItemError();
+  throw new Error(`save failed (${res.status})`);
 }

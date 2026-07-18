@@ -14,7 +14,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCameraPermissions } from "expo-camera";
 import Scanner from "./src/Scanner";
 import Capture, { type CaptureResult } from "./src/Capture";
-import { describe, save } from "./src/api";
+import { describe, save, DuplicateItemError } from "./src/api";
 import { classify } from "./src/labels";
 import { ITEM_PREFIX, BOX_PREFIX } from "./src/config";
 import { buzzOk, buzzErr } from "./src/haptics";
@@ -47,6 +47,8 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [count, setCount] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Item codes saved this session — one code = one physical sticker = one record.
+  const savedCodes = useRef<Set<string>>(new Set());
 
   function edit(patch: Partial<Draft>) {
     setDraft((d) => ({ ...d, ...patch }));
@@ -99,23 +101,32 @@ export default function App() {
   }
 
   async function doSave() {
+    const code = draft.itemCode.trim();
+    const box = draft.boxCode.trim();
+    // Instant local guard for an immediate re-scan; the backend is authoritative.
+    if (savedCodes.current.has(code)) {
+      buzzErr();
+      Alert.alert("Already saved", `Item ${code} is already saved — scan a new label.`);
+      return;
+    }
     setSaving(true);
     try {
-      await save({
-        itemCode: draft.itemCode.trim(),
-        boxCode: draft.boxCode.trim(),
-        description: draft.description.trim(),
-        imageBase64: draft.photoBase64,
-      });
+      await save({ itemCode: code, boxCode: box, description: draft.description.trim(), imageBase64: draft.photoBase64 });
       buzzOk();
-      showToast(`Saved ${draft.itemCode.trim()} → ${draft.boxCode.trim()} ✓`);
+      savedCodes.current.add(code);
+      showToast(`Saved ${code} → ${box} ✓`);
       setCount((c) => c + 1);
       // Keep the locked box for the next item; reset the rest.
       setDraft({ ...EMPTY, boxCode: draft.boxCode });
       setDescribeState("idle");
     } catch (e) {
       buzzErr();
-      Alert.alert("Save failed", String(e) + "\nYour entry is kept — try again.");
+      if (e instanceof DuplicateItemError) {
+        savedCodes.current.add(code); // remember it so a re-try is caught locally
+        Alert.alert("Already saved", `Item ${code} is already saved — scan a new label.`);
+      } else {
+        Alert.alert("Save failed", String(e) + "\nYour entry is kept — try again.");
+      }
     } finally {
       setSaving(false);
     }

@@ -116,9 +116,16 @@ export async function handleSave(req: Request, c: Cfg): Promise<Response> {
 
   if (!itemCode || !boxCode) return json({ error: "missing_codes" }, 400);
 
+  // Each item code maps to exactly one record (one physical QR sticker). Reject
+  // a re-save of an existing code — regardless of box — before any writes.
+  const trimmedItem = itemCode.trim();
+  if (await findItemByCode(c, trimmedItem)) {
+    return json({ error: "duplicate_item", itemCode: trimmedItem }, 409);
+  }
+
   const boxId = await findOrCreateBox(c, boxCode);
   const itemId = await createItem(c, {
-    itemCode,
+    itemCode: trimmedItem,
     description: description ?? "",
     boxId,
   });
@@ -138,6 +145,21 @@ function airtableApi(c: Cfg, table: string): string {
 
 function authHeaders(c: Cfg): Record<string, string> {
   return { authorization: `Bearer ${c.airtableToken}` };
+}
+
+// Returns the record id of an existing item with this code, or null. Used to
+// enforce one-record-per-item-code (a code = one physical QR sticker).
+async function findItemByCode(c: Cfg, itemCode: string): Promise<string | null> {
+  const safe = itemCode.replace(/'/g, "\\'");
+  const filter = encodeURIComponent(`{Item Code}='${safe}'`);
+  const findUrl = `${airtableApi(c, c.itemsTable)}?maxRecords=1&filterByFormula=${filter}`;
+
+  const found = await fetch(findUrl, { headers: authHeaders(c) });
+  if (found.ok) {
+    const data = (await found.json()) as { records?: Array<{ id: string }> };
+    if (data.records && data.records.length > 0) return data.records[0].id;
+  }
+  return null;
 }
 
 async function findOrCreateBox(c: Cfg, boxCode: string): Promise<string> {
