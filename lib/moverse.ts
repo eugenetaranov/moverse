@@ -143,6 +143,38 @@ export async function handleSave(req: Request, c: Cfg): Promise<Response> {
   return json({ ok: true, itemId, action: "created" });
 }
 
+/* ---------------- /next-code ---------------- */
+
+// Returns the next item code as ITM-#### one above the highest numeric ITM code
+// currently in Airtable. Non-numeric codes (e.g. ITM-DUPCHK-01) are ignored.
+export async function handleNextCode(c: Cfg): Promise<Response> {
+  let max = 0;
+  let offset: string | undefined;
+  do {
+    const u = new URL(airtableApi(c, c.itemsTable));
+    u.searchParams.set("pageSize", "100");
+    u.searchParams.append("fields[]", "Item Code");
+    if (offset) u.searchParams.set("offset", offset);
+
+    const res = await fetch(u.toString(), { headers: authHeaders(c) });
+    if (!res.ok) return json({ error: "next_code_failed" }, 502);
+    const data = (await res.json()) as {
+      records?: Array<{ fields?: { "Item Code"?: string } }>;
+      offset?: string;
+    };
+    for (const r of data.records ?? []) {
+      const m = /^ITM-(\d+)$/.exec((r.fields?.["Item Code"] ?? "").trim());
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > max) max = n;
+      }
+    }
+    offset = data.offset;
+  } while (offset);
+
+  return json({ nextCode: `ITM-${String(max + 1).padStart(4, "0")}` });
+}
+
 /* ---------------- Airtable helpers ---------------- */
 
 function airtableApi(c: Cfg, table: string): string {
