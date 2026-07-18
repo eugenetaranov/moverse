@@ -114,14 +114,22 @@ export async function handleSave(req: Request, c: Cfg): Promise<Response> {
     imageBase64?: string;
   };
 
-  if (!itemCode || !boxCode) return json({ error: "missing_codes" }, 400);
+  if (!boxCode) return json({ error: "missing_box" }, 400);
 
-  const trimmedItem = itemCode.trim();
   const boxId = await findOrCreateBox(c, boxCode);
+  const trimmedItem = (itemCode ?? "").trim();
 
-  // One record per item code (no duplicate rows), but an item may belong to more
-  // than one box. If the code already exists, union the box into it rather than
-  // creating a duplicate — same box = no-op, new box = added.
+  // "No codes" mode: the client sent no item code. Mint one server-side and
+  // always create — mint+create is atomic here, so codeless items can't race.
+  if (!trimmedItem) {
+    const minted = await nextItemCode(c);
+    const itemId = await createItem(c, { itemCode: minted, description: description ?? "", boxId });
+    if (imageBase64) await uploadPhoto(c, itemId, imageBase64);
+    return json({ ok: true, itemId, itemCode: minted, action: "created" });
+  }
+
+  // Coded modes: one record per item code (no duplicate rows), but an item may
+  // belong to more than one box — union the box in rather than duplicating.
   const existing = await findItemByCode(c, trimmedItem);
   if (existing) {
     if (existing.boxIds.includes(boxId)) {
@@ -140,14 +148,14 @@ export async function handleSave(req: Request, c: Cfg): Promise<Response> {
     await uploadPhoto(c, itemId, imageBase64);
   }
 
-  return json({ ok: true, itemId, action: "created" });
+  return json({ ok: true, itemId, itemCode: trimmedItem, action: "created" });
 }
 
 /* ---------------- /next-code ---------------- */
 
-// Returns the next item code as ITM-#### one above the highest numeric ITM code
-// currently in Airtable. Non-numeric codes (e.g. ITM-DUPCHK-01) are ignored.
-export async function handleNextCode(c: Cfg): Promise<Response> {
+// The next item code as ITM-#### one above the highest numeric ITM code in
+// Airtable. Non-numeric codes (e.g. ITM-DUPCHK-01) are ignored.
+async function nextItemCode(c: Cfg): Promise<string> {
   let max = 0;
   let offset: string | undefined;
   do {
@@ -157,7 +165,7 @@ export async function handleNextCode(c: Cfg): Promise<Response> {
     if (offset) u.searchParams.set("offset", offset);
 
     const res = await fetch(u.toString(), { headers: authHeaders(c) });
-    if (!res.ok) return json({ error: "next_code_failed" }, 502);
+    if (!res.ok) throw new Error(`next_code_query_${res.status}`);
     const data = (await res.json()) as {
       records?: Array<{ fields?: { "Item Code"?: string } }>;
       offset?: string;
@@ -172,7 +180,11 @@ export async function handleNextCode(c: Cfg): Promise<Response> {
     offset = data.offset;
   } while (offset);
 
-  return json({ nextCode: `ITM-${String(max + 1).padStart(4, "0")}` });
+  return `ITM-${String(max + 1).padStart(4, "0")}`;
+}
+
+export async function handleNextCode(c: Cfg): Promise<Response> {
+  return json({ nextCode: await nextItemCode(c) });
 }
 
 /* ---------------- Airtable helpers ---------------- */
