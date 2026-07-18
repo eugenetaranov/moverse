@@ -264,27 +264,27 @@ export default function App() {
 
         <FieldLabel text="Description / notes" done={draft.description.trim() !== ""} />
         <TextInput
-          style={[styles.input, { minHeight: 64 }]}
+          style={[styles.input, styles.multiline]}
           value={draft.description}
           onChangeText={(t) => edit({ description: t })}
           placeholder="Describe the item, or add a note…"
           multiline
         />
         <View style={styles.aiRow}>
-          <Text style={styles.aiState}>
-            {describeState === "loading"
-              ? "✨ Describing…"
-              : describeState === "off"
-                ? "AI off — type it in"
-                : describeState === "done"
-                  ? "✨ AI suggestion — edit if needed"
-                  : ""}
-          </Text>
           <SecondaryButton
             title="✨ Auto-describe"
             onPress={() => autoDescribe(draft.photoBase64)}
             disabled={!draft.photoBase64 || describeState === "loading"}
           />
+          {describeState !== "idle" ? (
+            <Text style={styles.aiState} numberOfLines={2}>
+              {describeState === "loading"
+                ? "Describing…"
+                : describeState === "off"
+                  ? "AI off — type it in"
+                  : "Suggestion added — edit if needed"}
+            </Text>
+          ) : null}
         </View>
 
         <View style={{ height: 16 }} />
@@ -407,8 +407,8 @@ const styles = StyleSheet.create({
   bannerWarn: { backgroundColor: "#8a1c1c" },
   bannerText: { color: "#fff", fontSize: 17, fontWeight: "700" },
   bannerAction: { color: "#9fb3d1", fontSize: 14, fontWeight: "700" },
-  status: { color: "#1b7a3d", fontWeight: "600", marginTop: 8, marginBottom: 4, marginHorizontal: 18 },
-  body2: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 24 },
+  status: { color: "#1b7a3d", fontWeight: "600", marginTop: 8, marginBottom: 4, marginHorizontal: 16 },
+  body2: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
   flex: { flex: 1 },
   fieldLabel: {
     fontSize: 13,
@@ -423,19 +423,21 @@ const styles = StyleSheet.create({
   thumb: { width: 84, height: 84, borderRadius: 10, backgroundColor: "#e5e5e5" },
   thumbEmpty: { alignItems: "center", justifyContent: "center" },
   thumbEmptyText: { color: "#666", fontSize: 12 },
-  inputRow: { flexDirection: "row", alignItems: "flex-start" },
+  inputRow: { flexDirection: "row", alignItems: "center" },
   input: {
     borderWidth: 1,
     borderColor: "#bbb",
     borderRadius: 10,
-    padding: 12,
+    paddingHorizontal: 12,
+    minHeight: MIN_TAP,
     fontSize: 16,
     backgroundColor: "#fafafa",
   },
+  multiline: { minHeight: 72, paddingTop: 12, paddingBottom: 12, textAlignVertical: "top" },
   inputBad: { borderColor: "#b45309", backgroundColor: "#fff7ed" },
   warn: { color: "#b45309", fontSize: 13, marginTop: 4, fontWeight: "600" },
-  aiRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 },
-  aiState: { color: "#555", fontSize: 13, flex: 1 },
+  aiRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
+  aiState: { color: "#555", fontSize: 13, flex: 1, marginLeft: 12 },
   body: { fontSize: 15, color: "#333", textAlign: "center", marginVertical: 2 },
   primaryBtn: {
     backgroundColor: "#111",
