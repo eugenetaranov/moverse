@@ -14,6 +14,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCameraPermissions } from "expo-camera";
 import Scanner from "./src/Scanner";
 import Capture, { type CaptureResult } from "./src/Capture";
+import Settings from "./src/Settings";
 import { describe, save } from "./src/api";
 import { classify } from "./src/labels";
 import { ITEM_PREFIX, BOX_PREFIX } from "./src/config";
@@ -34,7 +35,7 @@ const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photoUri: "",
 //  photo    = retake photo only
 //  scanItem = re-scan the item code only
 //  scanBox  = set / change the locked box
-type Mode = "home" | "capture" | "photo" | "scanItem" | "scanBox";
+type Mode = "home" | "capture" | "photo" | "scanItem" | "scanBox" | "settings";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
 export default function App() {
@@ -189,6 +190,9 @@ export default function App() {
       />
     );
   }
+  if (mode === "settings") {
+    return <Settings onClose={() => setMode("home")} />;
+  }
 
   // ---- the home hub ----
   const itemBad = draft.itemCode.trim() !== "" && classify(draft.itemCode) !== "item";
@@ -211,9 +215,14 @@ export default function App() {
         </Text>
         <Text style={styles.bannerAction}>{boxOk ? "Change" : "Scan"}</Text>
       </TouchableOpacity>
-      <Text style={[styles.status, toast ? styles.statusToast : styles.statusIdle]}>
-        {toast || (count > 0 ? `${count} packed` : "Ready")}
-      </Text>
+      <View style={styles.statusRow}>
+        <Text style={[styles.status, toast ? styles.statusToast : styles.statusIdle]}>
+          {toast || (count > 0 ? `${count} packed` : "Ready")}
+        </Text>
+        <TouchableOpacity onPress={() => setMode("settings")} hitSlop={8}>
+          <Text style={styles.printerLink}>⚙️ Settings</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* MIDDLE: correction / exception surface */}
       <ScrollView contentContainerStyle={styles.body2} keyboardShouldPersistTaps="handled">
@@ -372,9 +381,18 @@ const styles = StyleSheet.create({
   bannerWarn: { backgroundColor: "#8a1c1c" },
   bannerText: { color: "#fff", fontSize: 17, fontWeight: "700" },
   bannerAction: { color: "#9fb3d1", fontSize: 14, fontWeight: "700" },
-  status: { fontWeight: "600", marginTop: 8, marginBottom: 4, marginHorizontal: 16 },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  status: { fontWeight: "600", flex: 1 },
   statusToast: { color: "#1b7a3d" },
   statusIdle: { color: "#888" },
+  printerLink: { color: "#555", fontWeight: "700", fontSize: 13, paddingLeft: 12 },
   body2: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
   flex: { flex: 1 },
   fieldLabel: {

@@ -32,6 +32,15 @@ export interface SaveResult {
   action: SaveAction;
 }
 
+// The next ITM-#### code to assign, from the backend (Airtable max + 1).
+export async function nextCode(): Promise<string> {
+  const res = await fetch(`${WORKER_URL}/next-code`, { method: "POST", headers: headers() });
+  if (!res.ok) throw new Error(`next-code failed (${res.status})`);
+  const data = (await res.json()) as { nextCode?: string };
+  if (!data.nextCode) throw new Error("next-code missing");
+  return data.nextCode;
+}
+
 export async function save(payload: SavePayload): Promise<SaveResult> {
   const res = await fetch(`${WORKER_URL}/save`, {
     method: "POST",
