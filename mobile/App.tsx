@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -42,40 +42,21 @@ export default function App() {
 
   const [mode, setMode] = useState<Mode>("home");
   const [draft, setDraft] = useState<Draft>(EMPTY);
-  const [past, setPast] = useState<Draft[]>([]);
-  const [future, setFuture] = useState<Draft[]>([]);
   const [describeState, setDescribeState] = useState<DescribeState>("idle");
   const [saving, setSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState("");
+  const [toast, setToast] = useState("");
   const [count, setCount] = useState(0);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Snapshot-based edit for discrete actions (scans, photo, clear) so Undo/Redo
-  // can walk them. Free-text typing edits the draft directly (not in history).
-  function commit(patch: Partial<Draft>) {
-    setPast((p) => [...p, draft].slice(-40));
-    setFuture([]);
-    setDraft((d) => ({ ...d, ...patch }));
-  }
   function edit(patch: Partial<Draft>) {
     setDraft((d) => ({ ...d, ...patch }));
   }
-  function undo() {
-    if (past.length === 0) return;
-    const prev = past[past.length - 1];
-    setFuture((f) => [draft, ...f].slice(0, 40));
-    setDraft(prev);
-    setPast((p) => p.slice(0, -1));
-  }
-  function redo() {
-    if (future.length === 0) return;
-    const next = future[0];
-    setPast((p) => [...p, draft].slice(-40));
-    setDraft(next);
-    setFuture((f) => f.slice(1));
-  }
-  function clearDraft() {
-    commit({ itemCode: "", description: "", photoUri: "", photoBase64: "" });
-    setDescribeState("idle");
+  // Transient confirmation — shows briefly then clears itself so nothing sits
+  // on screen forever.
+  function showToast(msg: string) {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 2500);
   }
 
   async function autoDescribe(b64: string) {
@@ -98,7 +79,7 @@ export default function App() {
   function onCaptureDone(r: CaptureResult) {
     const patch: Partial<Draft> = { photoUri: r.photoUri, photoBase64: r.photoBase64 };
     if (r.itemCode) patch.itemCode = r.itemCode;
-    commit(patch);
+    edit(patch);
     setMode("home");
     void autoDescribe(r.photoBase64);
   }
@@ -109,10 +90,10 @@ export default function App() {
       setMode("home");
       Alert.alert("Switch box?", `Now packing into ${code} instead of ${prev}?`, [
         { text: "Keep " + prev, style: "cancel" },
-        { text: "Switch", onPress: () => commit({ boxCode: code }) },
+        { text: "Switch", onPress: () => edit({ boxCode: code }) },
       ]);
     } else {
-      commit({ boxCode: code });
+      edit({ boxCode: code });
       setMode("home");
     }
   }
@@ -127,12 +108,10 @@ export default function App() {
         imageBase64: draft.photoBase64,
       });
       buzzOk();
-      setLastSaved(`${draft.itemCode.trim()} → ${draft.boxCode.trim()}`);
+      showToast(`Saved ${draft.itemCode.trim()} → ${draft.boxCode.trim()} ✓`);
       setCount((c) => c + 1);
-      // Keep the locked box for the next item; reset the rest + history.
+      // Keep the locked box for the next item; reset the rest.
       setDraft({ ...EMPTY, boxCode: draft.boxCode });
-      setPast([]);
-      setFuture([]);
       setDescribeState("idle");
     } catch (e) {
       buzzErr();
@@ -182,7 +161,7 @@ export default function App() {
         expect="item"
         prompt="Scan the item's QR label (ITM-…)"
         onScan={(code) => {
-          commit({ itemCode: code });
+          edit({ itemCode: code });
           setMode("home");
         }}
         onReject={(m) => Alert.alert("Wrong label", m)}
@@ -212,7 +191,7 @@ export default function App() {
 
   return (
     <View style={styles.screen}>
-      {/* TOP: box-lock banner + status */}
+      {/* TOP: box-lock banner + transient status */}
       <TouchableOpacity
         style={[styles.banner, boxOk ? styles.bannerOk : styles.bannerWarn]}
         onPress={() => setMode("scanBox")}
@@ -223,9 +202,8 @@ export default function App() {
         </Text>
         <Text style={styles.bannerAction}>{boxOk ? "Change" : "Scan"}</Text>
       </TouchableOpacity>
-      <Text style={styles.status}>
-        {lastSaved ? `Saved ${lastSaved} ✓` : "Ready"}
-        {count > 0 ? ` · ${count} packed` : ""}
+      <Text style={[styles.status, toast ? styles.statusToast : styles.statusIdle]}>
+        {toast || (count > 0 ? `${count} packed` : "Ready")}
       </Text>
 
       {/* MIDDLE: correction / exception surface */}
@@ -239,10 +217,11 @@ export default function App() {
               <Text style={styles.thumbEmptyText}>No photo</Text>
             </View>
           )}
-          <View style={{ flex: 1, marginLeft: 12 }}>
+          <View style={styles.rightCol}>
             <SecondaryButton
-              title={draft.photoUri ? "Retake photo" : "Take photo"}
+              title={draft.photoUri ? "Retake" : "Take photo"}
               onPress={() => setMode("photo")}
+              style={styles.fixedBtn}
             />
           </View>
         </View>
@@ -258,7 +237,7 @@ export default function App() {
             autoCorrect={false}
           />
           <View style={{ width: 8 }} />
-          <SecondaryButton title="Scan" onPress={() => setMode("scanItem")} />
+          <SecondaryButton title="Scan" onPress={() => setMode("scanItem")} style={styles.fixedBtn} />
         </View>
         {itemBad ? <Text style={styles.warn}>Expected an {ITEM_PREFIX} code</Text> : null}
 
@@ -286,16 +265,10 @@ export default function App() {
             </Text>
           ) : null}
         </View>
-
-        <View style={{ height: 16 }} />
-        <SecondaryButton title="Clear / new item" onPress={clearDraft} />
       </ScrollView>
 
       {/* BOTTOM: fixed action bar (outside the scroll) */}
       <View style={styles.actionBar}>
-        <SmallSquare title="↶" onPress={undo} disabled={past.length === 0} />
-        <SmallSquare title="↷" onPress={redo} disabled={future.length === 0} />
-        <View style={{ width: 10 }} />
         {draftEmpty ? (
           <PrimaryButton title="Scan item ▶" onPress={() => setMode("capture")} style={styles.flex} />
         ) : (
@@ -348,37 +321,20 @@ function SecondaryButton({
   title,
   onPress,
   disabled,
+  style,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
+  style?: object;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.secondaryBtn, disabled && styles.btnDisabled]}
+      style={[styles.secondaryBtn, disabled && styles.btnDisabled, style]}
       onPress={onPress}
       disabled={disabled}
     >
       <Text style={styles.secondaryBtnText}>{title}</Text>
-    </TouchableOpacity>
-  );
-}
-function SmallSquare({
-  title,
-  onPress,
-  disabled,
-}: {
-  title: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.square, disabled && styles.btnDisabled]}
-      onPress={onPress}
-      disabled={disabled}
-    >
-      <Text style={styles.squareText}>{title}</Text>
     </TouchableOpacity>
   );
 }
@@ -407,7 +363,9 @@ const styles = StyleSheet.create({
   bannerWarn: { backgroundColor: "#8a1c1c" },
   bannerText: { color: "#fff", fontSize: 17, fontWeight: "700" },
   bannerAction: { color: "#9fb3d1", fontSize: 14, fontWeight: "700" },
-  status: { color: "#1b7a3d", fontWeight: "600", marginTop: 8, marginBottom: 4, marginHorizontal: 16 },
+  status: { fontWeight: "600", marginTop: 8, marginBottom: 4, marginHorizontal: 16 },
+  statusToast: { color: "#1b7a3d" },
+  statusIdle: { color: "#888" },
   body2: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
   flex: { flex: 1 },
   fieldLabel: {
@@ -420,6 +378,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   photoRow: { flexDirection: "row", alignItems: "center" },
+  rightCol: { flex: 1, marginLeft: 12, alignItems: "flex-end" },
   thumb: { width: 84, height: 84, borderRadius: 10, backgroundColor: "#e5e5e5" },
   thumbEmpty: { alignItems: "center", justifyContent: "center" },
   thumbEmptyText: { color: "#666", fontSize: 12 },
@@ -439,6 +398,9 @@ const styles = StyleSheet.create({
   aiRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
   aiState: { color: "#555", fontSize: 13, flex: 1, marginLeft: 12 },
   body: { fontSize: 15, color: "#333", textAlign: "center", marginVertical: 2 },
+  // Shared width for the Photo/Scan secondary actions so they match and their
+  // right edges line up against the margin.
+  fixedBtn: { minWidth: 132 },
   primaryBtn: {
     backgroundColor: "#111",
     minHeight: 56,
@@ -457,16 +419,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   secondaryBtnText: { color: "#111", fontSize: 15, fontWeight: "600" },
-  square: {
-    width: MIN_TAP,
-    height: MIN_TAP,
-    borderRadius: 10,
-    marginRight: 6,
-    backgroundColor: "#eee",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  squareText: { fontSize: 20, fontWeight: "700", color: "#111" },
   btnDisabled: { opacity: 0.35 },
   actionBar: {
     flexDirection: "row",
