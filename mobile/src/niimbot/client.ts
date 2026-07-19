@@ -16,6 +16,16 @@ const T = {
   GET_STATUS: 0xa3,
 } as const;
 const RESP_STATUS = 0xb3; // In_PrintStatus
+// Command -> its ack response, so setup commands can be gated in order.
+const RESP_MAP: Record<number, number> = {
+  0x21: 0x31, // density
+  0x23: 0x33, // label type
+  0x01: 0x02, // print start
+  0x03: 0x04, // page start
+  0x13: 0x14, // page size
+  0xe3: 0xe4, // page end
+  0xf3: 0xf4, // print end
+};
 const HEAD_PX = 384; // B1 printhead width
 
 export interface Bitmap {
@@ -82,10 +92,27 @@ export class NiimbotClient {
     });
   }
 
+  // Send a command and (if it has a mapped response) wait for its ack before
+  // returning, so the B1 processes the setup commands strictly in order. Waiter
+  // is registered before the write to avoid missing a fast response.
   private async send(type: number, data: number[]): Promise<void> {
+    const respType = RESP_MAP[type];
+    const ackP = respType !== undefined ? this.waitFor(respType, 1500) : null;
     this.log(`-> 0x${type.toString(16)} [${data.join(",")}]`);
     await this.t.write(new NiimbotPacket(type, Uint8Array.from(data)).toBytes());
-    await sleep(15);
+    if (ackP) {
+      if (!(await ackP)) this.log(`  (no ack for 0x${type.toString(16)})`);
+    } else {
+      await sleep(10);
+    }
+  }
+
+  // Send and return the response promise (waiter registered first).
+  private sendRecv(type: number, data: number[], respType: number, timeoutMs: number): Promise<NiimbotPacket | null> {
+    const p = this.waitFor(respType, timeoutMs);
+    this.log(`-> 0x${type.toString(16)} [${data.join(",")}]`);
+    void this.t.write(new NiimbotPacket(type, Uint8Array.from(data)).toBytes());
+    return p;
   }
   // Image-row write: prefer acknowledged (guaranteed delivery + flow control);
   // fall back to no-response if the characteristic doesn't support it.
@@ -177,18 +204,26 @@ export class NiimbotClient {
     this.log(`sent ${img.height} rows`);
 
     await this.send(T.PAGE_END, [1]);
-    for (let i = 0; i < 40; i++) {
+
+    // Wait for the printer to PHYSICALLY finish (page count reaches totalPages).
+    // Printing 80mm takes seconds — ending the job before this aborts the print.
+    let printed = 0;
+    for (let i = 0; i < 80; i++) {
       if (this.aborted) throw new Error("cancelled");
-      await this.send(T.GET_STATUS, [1]);
-      const resp = await this.waitFor(RESP_STATUS, 400);
+      const resp = await this.sendRecv(T.GET_STATUS, [1], RESP_STATUS, 500);
       if (resp) {
         const d = resp.data;
         const page = (d[0] << 8) | d[1];
-        this.log(`status: page ${page}, progress ${d[2]}/${d[3]} [${Array.from(d).join(",")}]`);
-        break;
+        const err = d.length >= 10 ? d[6] : 0;
+        this.log(`status: page ${page}/${totalPages} prog ${d[2]}/${d[3]}${err ? ` ERR ${err}` : ""}`);
+        if (err) throw new Error(`print error ${err}`);
+        printed = page;
+        if (page >= totalPages) break;
       }
-      await sleep(150);
+      await sleep(250);
     }
+    this.log(printed >= totalPages ? "printed ✓" : "print timed out (page not reached)");
+
     await this.send(T.PRINT_END, [1]);
     this.log("print done");
   }
