@@ -54,6 +54,7 @@ const MODES: { key: LabelingMode; icon: IconName; title: string; sub: string }[]
 export default function Settings() {
   const [lines, setLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [, force] = useState(0);
   const [mode, setMode] = useState<LabelingMode>("assign");
   const [label, setLabel] = useState<LabelSize>(DEFAULT_LABEL);
@@ -120,7 +121,7 @@ export default function Settings() {
   }
   async function printTest() {
     if (!printer.client) return;
-    setBusy(true);
+    setPrinting(true);
     try {
       const { widthPx, heightPx } = labelPx(label);
       log(`printing test ${widthPx}x${heightPx} (d${tuning.density}, type ${tuning.labelType})…`);
@@ -129,7 +130,7 @@ export default function Settings() {
     } catch (e) {
       log(`print stopped: ${String((e as Error)?.message ?? e)}`);
     } finally {
-      setBusy(false);
+      setPrinting(false);
     }
   }
   async function cancelPrint() {
@@ -140,7 +141,7 @@ export default function Settings() {
     } catch {
       // ignore
     }
-    setBusy(false);
+    setPrinting(false);
   }
 
   async function copyLog() {
@@ -196,18 +197,18 @@ export default function Settings() {
       </View>
       <View style={styles.row}>
         {printer.connected ? (
-          <Button title="Disconnect" onPress={disconnect} disabled={busy} style={styles.flexBtn} />
+          <Button title="Disconnect" onPress={disconnect} disabled={busy || printing} style={styles.flexBtn} />
         ) : (
           <Button title="Connect" icon="bluetooth" tone="accent" onPress={connect} disabled={busy} style={styles.flexBtn} />
         )}
-        {busy ? (
+        {printing ? (
           <Button title="Cancel print" icon="close" tone="danger" onPress={cancelPrint} style={styles.flexBtn} />
         ) : (
           <Button
             title="Print test"
             icon="print-outline"
             onPress={printTest}
-            disabled={!printer.connected}
+            disabled={!printer.connected || busy}
             style={styles.flexBtn}
           />
         )}
