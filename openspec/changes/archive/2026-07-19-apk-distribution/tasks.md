@@ -13,7 +13,7 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Trigger the workflow (push to `main` or **Run workflow**) and confirm the run is green (`gh run watch`)
-- [ ] 3.2 Confirm the Release exists with the asset: `gh release view android-latest` lists `moverse.apk`
-- [ ] 3.3 On the Android phone, open the download URL, install the APK, launch **Moverse**
-- [ ] 3.4 Run one capture end to end and confirm the `/save` write reaches `moverse-chi.vercel.app` (new Item in Airtable). `/describe` requires `ANTHROPIC_API_KEY` in Vercel (deferred)
+- [x] 3.1 Trigger the workflow (push to `main` or **Run workflow**) and confirm the run is green (`gh run watch`)
+- [x] 3.2 Confirm the Release exists with the asset: `gh release view android-latest` lists `moverse.apk`
+- [x] 3.3 On the Android phone, open the download URL, install the APK, launch **Moverse**
+- [x] 3.4 Run one capture end to end and confirm the `/save` write reaches `moverse-chi.vercel.app` (new Item in Airtable). `/describe` requires `ANTHROPIC_API_KEY` in Vercel (deferred)

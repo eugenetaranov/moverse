@@ -3,16 +3,16 @@
 - [x] 1.1 Create the Airtable base "Moverse" with a **Boxes** table (`Box Code`, `Type` [Suitcase|Shipping box], `Destination` [With me|Shipment], `Name / Notes`, `Status` [Packing|Sealed|Arrived], `Items` link)
 - [x] 1.2 Create the **Items** table (`Item Code`, `Photo` attachment, `Description`, `Box` link → Boxes, `Destination` lookup from Box, `Created` time [via `CREATED_TIME()` formula])
 - [ ] 1.3 Add a **Gallery view** on Items grouped by `Box`, and a Grid view filtered to `Destination = With me`
-- [ ] 1.4 Create an Airtable personal access token scoped to the base; note the base ID and the `Photo` field ID
-- [ ] 1.5 Generate `ITM-####` and `BOX-####` QR label batches and print them via the official NIIMBOT app; stick `BOX-*` labels on suitcases/boxes
+- [x] 1.4 Create an Airtable personal access token scoped to the base; note the base ID and the `Photo` field ID
+- [x] 1.5 _(superseded: labels are now generated and printed in-app via the NIIMBOT B1/D110 integration, not pre-printed through the official app)_
 
 ## 2. Cloudflare Worker proxy
 
 - [x] 2.1 Scaffold a Worker project (`wrangler`) and set secrets: `ANTHROPIC_API_KEY`, `AIRTABLE_TOKEN`, `AIRTABLE_BASE_ID` (+ optional shared `APP_SECRET` header)
 - [x] 2.2 Implement `POST /describe` `{ imageBase64 }` → `{ description }` calling `claude-haiku-4-5` with a base64 `image` block, terse ≤10-word prompt, `max_tokens ~150`
 - [x] 2.3 Implement `POST /save` `{ itemCode, boxCode, description, imageBase64 }`: find-or-create the Box row, create the Item row (with Box link + description), then upload the photo via Airtable's Upload Attachment content API
-- [ ] 2.4 Add error handling (upstream failure → clean error response) and avoid logging payloads; deploy the Worker and record its URL
-- [ ] 2.5 Verify both endpoints with `curl` (see spec scenarios): `/describe` returns a short phrase; `/save` creates an Item with photo + box link
+- [x] 2.4 Add error handling (upstream failure → clean error response) and avoid logging payloads; deploy the Worker and record its URL
+- [x] 2.5 Verify both endpoints with `curl` (see spec scenarios): `/describe` returns a short phrase; `/save` creates an Item with photo + box link
 
 ## 3. Expo app — scaffolding & scanning
 
@@ -32,7 +32,7 @@
 
 ## 5. End-to-end verification & build
 
-- [ ] 5.1 Run the full flow in Expo Go on the Android phone: scan `ITM-*` → photo → confirm description → scan `BOX-*` → save
+- [x] 5.1 Run the full flow in Expo Go on the Android phone: scan `ITM-*` → photo → confirm description → scan `BOX-*` → save
 - [ ] 5.2 Confirm in Airtable: the item appears in the Gallery view under the correct box, photo visible; the "With me" filter lists only suitcase items
 - [ ] 5.3 Verify reassign: change an item's `Box` link in Airtable and confirm the gallery regroups
-- [ ] 5.4 `eas build -p android` to produce a standalone APK; install it and repeat one capture end to end
+- [x] 5.4 _(superseded by apk-distribution: standalone APK is built by GitHub Actions and published to the rolling `android-latest` Release)_
