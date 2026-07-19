@@ -87,13 +87,19 @@ export async function saveBoxExtra(t: string): Promise<void> {
   }
 }
 
-export const DOTS_PER_MM = 8; // B1 is 203 dpi ≈ 8 px/mm
-export const HEAD_PX = 384; // B1 printhead width cap
+export const DOTS_PER_MM = 8; // 203 dpi ≈ 8 px/mm
+export const HEAD_PX = 384; // widest supported printhead (B1); fallback cap
 
-// Pixel dimensions of the printed bitmap for a label size.
-export function labelPx(s: LabelSize): { widthPx: number; heightPx: number } {
+// Pixel dimensions of the printed bitmap for a label size. The width is capped at
+// the printer's printhead width (`maxWidthPx`) — a wide label on a narrow head
+// (e.g. a 15mm label on the D110's 12mm/96px head) must clamp to the head, not to
+// the global 384px, or the image overflows the head and prints distorted/oversized.
+export function labelPx(
+  s: LabelSize,
+  maxWidthPx: number = HEAD_PX,
+): { widthPx: number; heightPx: number } {
   return {
-    widthPx: Math.min(Math.round(s.widthMm * DOTS_PER_MM), HEAD_PX),
+    widthPx: Math.min(Math.round(s.widthMm * DOTS_PER_MM), maxWidthPx),
     heightPx: Math.round(s.heightMm * DOTS_PER_MM),
   };
 }

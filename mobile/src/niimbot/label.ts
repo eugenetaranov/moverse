@@ -9,8 +9,8 @@ import { LabelSize, labelPx, fitsQr } from "../labelSettings";
 //    width (never overflowing — the old layout scaled the QR to the height and
 //    clipped it on tall narrow labels).
 //  - Small labels are text-only.
-export function renderLabel(code: string, size: LabelSize): Bitmap {
-  const { widthPx, heightPx } = labelPx(size);
+export function renderLabel(code: string, size: LabelSize, maxWidthPx?: number): Bitmap {
+  const { widthPx, heightPx } = labelPx(size, maxWidthPx);
   const bytesPerRow = Math.ceil(widthPx / 8);
   const data = new Uint8Array(bytesPerRow * heightPx);
   const set = (x: number, y: number) => {
@@ -91,8 +91,13 @@ function wrapLines(text: string, maxChars: number): string[] {
 
 // Box label: box code prominent, an optional QR (fitsQr), and free-form extra
 // text (phone / address / links) in small wrapped lines at the bottom.
-export function renderBoxLabel(boxCode: string, extraText: string, size: LabelSize): Bitmap {
-  const { widthPx, heightPx } = labelPx(size);
+export function renderBoxLabel(
+  boxCode: string,
+  extraText: string,
+  size: LabelSize,
+  maxWidthPx?: number,
+): Bitmap {
+  const { widthPx, heightPx } = labelPx(size, maxWidthPx);
   const bytesPerRow = Math.ceil(widthPx / 8);
   const data = new Uint8Array(bytesPerRow * heightPx);
   const set = (x: number, y: number) => {

@@ -254,7 +254,7 @@ export default function Pack() {
     }
     setPrintStatus("printing");
     try {
-      await p.client.printImage(renderLabel(code, p.labelSize), tuning.density, tuning.labelType);
+      await p.client.printImage(renderLabel(code, p.labelSize, p.model.widthPx), tuning.density, tuning.labelType);
       buzzOk();
       setPrintStatus("done");
     } catch {
@@ -293,7 +293,7 @@ export default function Pack() {
       return;
     }
     try {
-      await p.client.printImage(renderBoxLabel(trimmed, boxExtra, p.labelSize), tuning.density, tuning.labelType);
+      await p.client.printImage(renderBoxLabel(trimmed, boxExtra, p.labelSize, p.model.widthPx), tuning.density, tuning.labelType);
       buzzOk();
     } catch {
       buzzErr();

@@ -18,6 +18,7 @@ import { makeTestImage } from "./niimbot/testImage";
 import {
   DEFAULT_TUNING,
   LABEL_TYPES,
+  LabelSize,
   PrintTuning,
   fitsQr,
   labelPx,
@@ -63,7 +64,18 @@ export default function Settings() {
   const [boxExtra, setBoxExtra] = useState("");
   const [savedExtra, setSavedExtra] = useState("");
   const extraDirty = boxExtra !== savedExtra;
+  const [sizeSavedId, setSizeSavedId] = useState<string | null>(null);
+  const sizeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
+
+  // Persist a printer's label size and briefly flag it as saved (the fields
+  // commit on blur, so without this the save is invisible).
+  function changeLabelSize(id: string, size: LabelSize) {
+    printers.setLabelSize(id, size);
+    setSizeSavedId(id);
+    if (sizeSaveTimer.current) clearTimeout(sizeSaveTimer.current);
+    sizeSaveTimer.current = setTimeout(() => setSizeSavedId(null), 1800);
+  }
 
   useEffect(() => {
     loadMode().then(setMode);
@@ -133,7 +145,7 @@ export default function Settings() {
   async function printTestOn(mp: ManagedPrinter) {
     setPrintingId(mp.id);
     try {
-      const { widthPx, heightPx } = labelPx(mp.labelSize);
+      const { widthPx, heightPx } = labelPx(mp.labelSize, mp.model.widthPx);
       log(`printing test ${widthPx}x${heightPx} on ${mp.name} (d${tuning.density}, type ${tuning.labelType})…`);
       await mp.client.printImage(makeTestImage(widthPx, heightPx), tuning.density, tuning.labelType);
       log("print done");
@@ -232,17 +244,25 @@ export default function Settings() {
               ) : null}
 
               <View style={styles.roleBlock}>
-                <Text style={styles.tuneLabel}>Label size (mm)</Text>
+                <View style={styles.sizeHead}>
+                  <Text style={styles.tuneLabel}>Label size (mm)</Text>
+                  {sizeSavedId === mp.id ? (
+                    <View style={styles.savedTag}>
+                      <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                      <Text style={styles.savedTagText}>Saved</Text>
+                    </View>
+                  ) : null}
+                </View>
                 <View style={styles.row}>
                   <Field
                     label="Width"
                     value={mp.labelSize.widthMm}
-                    onChange={(n) => printers.setLabelSize(mp.id, { ...mp.labelSize, widthMm: n })}
+                    onChange={(n) => changeLabelSize(mp.id, { ...mp.labelSize, widthMm: n })}
                   />
                   <Field
                     label="Height"
                     value={mp.labelSize.heightMm}
-                    onChange={(n) => printers.setLabelSize(mp.id, { ...mp.labelSize, heightMm: n })}
+                    onChange={(n) => changeLabelSize(mp.id, { ...mp.labelSize, heightMm: n })}
                   />
                 </View>
                 <View style={styles.formatRow}>
@@ -252,6 +272,7 @@ export default function Settings() {
                     color={colors.accent}
                   />
                   <Text style={styles.format}>{fitsQr(mp.labelSize) ? "QR code + text" : "Text only"}</Text>
+                  <Text style={styles.headHint}>· head {Math.round(mp.model.widthPx / 8)}mm max</Text>
                 </View>
               </View>
 
@@ -448,6 +469,10 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   roleBlock: { marginTop: space.md },
+  sizeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: space.xs },
+  savedTag: { flexDirection: "row", alignItems: "center", gap: 3 },
+  savedTagText: { ...t.caption, color: colors.accent, fontWeight: "600" },
+  headHint: { ...t.caption, color: colors.mutedFg, marginLeft: space.xs },
   scanRow: {
     flexDirection: "row",
     alignItems: "center",
