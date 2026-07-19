@@ -28,8 +28,7 @@ import {
 } from "./labelSettings";
 import { LabelingMode, loadMode, saveMode } from "./labelingMode";
 import { colors, radius, space, type as t, HIT } from "./theme";
-
-type IconName = keyof typeof Ionicons.glyphMap;
+import { Button, Segmented, SelectableCard, SectionHeader, TextField, SCREEN, type IconName } from "./ui";
 
 async function requestBlePermissions(): Promise<boolean> {
   if (Platform.OS !== "android") return true;
@@ -52,7 +51,7 @@ const MODES: { key: LabelingMode; icon: IconName; title: string; sub: string }[]
   { key: "none", icon: "camera-outline", title: "No codes", sub: "Just name a box, photograph items" },
 ];
 
-export default function Settings({ onClose }: { onClose: () => void }) {
+export default function Settings() {
   const [lines, setLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [, force] = useState(0);
@@ -150,40 +149,30 @@ export default function Settings({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ padding: space.lg, paddingTop: 56 }}>
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>Settings</Text>
-        <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
-          <Text style={styles.close}>Done</Text>
-        </TouchableOpacity>
-      </View>
-
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={{ paddingHorizontal: SCREEN.padH, paddingTop: space.md, paddingBottom: SCREEN.padBottom }}
+    >
       {/* Labeling mode */}
-      <Text style={styles.section}>How do you label items?</Text>
+      <SectionHeader>How do you label items?</SectionHeader>
       {MODES.map((m) => {
         const on = mode === m.key;
         return (
-          <TouchableOpacity
+          <SelectableCard
             key={m.key}
-            style={[styles.modeCard, on && styles.modeCardOn]}
+            icon={m.icon}
+            title={m.title}
+            subtitle={m.sub}
+            selected={on}
             onPress={() => pickMode(m.key)}
-            activeOpacity={0.85}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: on }}
-          >
-            <View style={[styles.modeIcon, on && styles.modeIconOn]}>
-              <Ionicons name={m.icon} size={22} color={on ? colors.onPrimary : colors.mutedFg} />
-            </View>
-            <View style={{ marginLeft: space.md, flex: 1 }}>
-              <Text style={styles.modeTitle}>{m.title}</Text>
-              <Text style={styles.modeSub}>{m.sub}</Text>
-            </View>
-            <Ionicons
-              name={on ? "checkmark-circle" : "ellipse-outline"}
-              size={22}
-              color={on ? colors.accent : colors.border}
-            />
-          </TouchableOpacity>
+            trailing={
+              <Ionicons
+                name={on ? "checkmark-circle" : "ellipse-outline"}
+                size={22}
+                color={on ? colors.accent : colors.border}
+              />
+            }
+          />
         );
       })}
 
@@ -194,7 +183,7 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       ) : (
         <>
       {/* Printer */}
-      <Text style={styles.section}>Printer (NIIMBOT B1)</Text>
+      <SectionHeader>Printer (NIIMBOT B1)</SectionHeader>
       <View style={styles.stateRow}>
         <Ionicons
           name={printer.connected ? "bluetooth" : "bluetooth-outline"}
@@ -207,20 +196,25 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       </View>
       <View style={styles.row}>
         {printer.connected ? (
-          <Btn title="Disconnect" onPress={disconnect} disabled={busy} />
+          <Button title="Disconnect" onPress={disconnect} disabled={busy} style={styles.flexBtn} />
         ) : (
-          <Btn title="Connect" icon="bluetooth" tone="accent" onPress={connect} disabled={busy} />
+          <Button title="Connect" icon="bluetooth" tone="accent" onPress={connect} disabled={busy} style={styles.flexBtn} />
         )}
-        <Btn title="Print test" icon="print-outline" onPress={printTest} disabled={busy || !printer.connected} />
+        {busy ? (
+          <Button title="Cancel print" icon="close" tone="danger" onPress={cancelPrint} style={styles.flexBtn} />
+        ) : (
+          <Button
+            title="Print test"
+            icon="print-outline"
+            onPress={printTest}
+            disabled={!printer.connected}
+            style={styles.flexBtn}
+          />
+        )}
       </View>
-      {busy ? (
-        <View style={[styles.row, { marginTop: space.sm }]}>
-          <Btn title="Cancel" tone="danger" onPress={cancelPrint} />
-        </View>
-      ) : null}
 
       {/* Label size */}
-      <Text style={styles.section}>Label size (mm)</Text>
+      <SectionHeader>Label size (mm)</SectionHeader>
       <Text style={styles.hint}>Determines whether labels print as QR + text or text-only.</Text>
       <View style={styles.row}>
         <Field label="Width" value={label.widthMm} onChange={(n) => updateLabel({ widthMm: n })} />
@@ -236,41 +230,27 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       </View>
 
       {/* Print tuning */}
-      <Text style={styles.section}>Print tuning</Text>
-      <View style={styles.tuneRow}>
+      <SectionHeader>Print tuning</SectionHeader>
+      <View style={styles.tuneBlock}>
         <Text style={styles.tuneLabel}>Density</Text>
-        <View style={styles.seg}>
-          {[1, 2, 3, 4, 5].map((d) => (
-            <TouchableOpacity
-              key={d}
-              style={[styles.segItem, tuning.density === d && styles.segItemOn]}
-              onPress={() => updateTuning({ density: d })}
-            >
-              <Text style={[styles.segText, tuning.density === d && styles.segTextOn]}>{d}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <Segmented
+          options={[1, 2, 3, 4, 5].map((d) => ({ value: String(d), label: String(d) }))}
+          value={String(tuning.density)}
+          onChange={(v) => updateTuning({ density: Number(v) })}
+        />
       </View>
-      <View style={styles.tuneRow}>
+      <View style={styles.tuneBlock}>
         <Text style={styles.tuneLabel}>Label type</Text>
-        <View style={styles.seg}>
-          {LABEL_TYPES.map((lt) => (
-            <TouchableOpacity
-              key={lt.v}
-              style={[styles.segItem, tuning.labelType === lt.v && styles.segItemOn]}
-              onPress={() => updateTuning({ labelType: lt.v })}
-            >
-              <Text style={[styles.segText, tuning.labelType === lt.v && styles.segTextOn]}>
-                {lt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <Segmented
+          options={LABEL_TYPES.map((lt) => ({ value: String(lt.v), label: lt.label }))}
+          value={String(tuning.labelType)}
+          onChange={(v) => updateTuning({ labelType: Number(v) })}
+        />
       </View>
 
       {/* Log */}
       <View style={styles.logHeader}>
-        <Text style={styles.section}>Log</Text>
+        <SectionHeader>Log</SectionHeader>
         <TouchableOpacity
           style={styles.copyBtn}
           onPress={copyLog}
