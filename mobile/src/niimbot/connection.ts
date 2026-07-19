@@ -67,6 +67,12 @@ class PrinterManager {
     for (const l of this.listeners) l();
   }
 
+  // A per-printer log that prefixes lines with the device id so the UI can filter
+  // the shared log stream down to one printer's traffic.
+  private taggedLog(id: string): (s: string) => void {
+    return (s: string) => this.log(`[${id}] ${s}`);
+  }
+
   list(): ManagedPrinter[] {
     return [...this.printers.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
@@ -104,7 +110,8 @@ class PrinterManager {
     await this.ensureLoaded();
     const existing = this.printers.get(deviceId);
     if (existing) return existing;
-    const t = new BleTransport(this.log);
+    const plog = this.taggedLog(deviceId);
+    const t = new BleTransport(plog);
     // A drop removes only this printer from the set.
     t.onDisconnect = () => {
       if (this.printers.get(deviceId)?.transport === t) {
@@ -113,7 +120,7 @@ class PrinterManager {
       }
     };
     const resolvedName = await t.connectById(deviceId);
-    const client = new NiimbotClient(t, this.log);
+    const client = new NiimbotClient(t, plog);
     const model = detectModel(name ?? resolvedName);
     const mp = new ManagedPrinter(deviceId, name ?? resolvedName, model, t, client);
     mp.role = this.roles[deviceId] ?? DEFAULT_ROLE;
@@ -223,7 +230,8 @@ class PrinterManager {
       for (const r of remembered) {
         if (this.printers.has(r.id)) continue;
         try {
-          const t = new BleTransport(this.log);
+          const plog = this.taggedLog(r.id);
+          const t = new BleTransport(plog);
           t.onDisconnect = () => {
             if (this.printers.get(r.id)?.transport === t) {
               this.printers.delete(r.id);
@@ -231,7 +239,7 @@ class PrinterManager {
             }
           };
           await t.connectById(r.id);
-          const client = new NiimbotClient(t, this.log);
+          const client = new NiimbotClient(t, plog);
           const model = modelById(r.model);
           const mp = new ManagedPrinter(r.id, r.name, model, t, client);
           mp.role = this.roles[r.id] ?? DEFAULT_ROLE;

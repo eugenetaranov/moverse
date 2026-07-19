@@ -60,6 +60,7 @@ const MODES: { key: LabelingMode; icon: IconName; title: string; sub: string }[]
 export default function Settings() {
   const [lines, setLines] = useState<string[]>([]);
   const [logOpen, setLogOpen] = useState(false);
+  const [logFilterId, setLogFilterId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const printing = printingId !== null;
@@ -182,8 +183,20 @@ export default function Settings() {
     setPrintingId(null);
   }
 
+  function openLog(filterId: string | null) {
+    setLogFilterId(filterId);
+    setLogOpen(true);
+  }
+
+  // Log lines are tagged `[deviceId] …` per printer; a filter shows just one
+  // printer's lines (prefix stripped), null shows the combined stream.
+  const shownLines = logFilterId
+    ? lines.filter((l) => l.startsWith(`[${logFilterId}] `)).map((l) => l.slice(logFilterId.length + 3))
+    : lines;
+  const logTitleName = logFilterId ? printers.list().find((p) => p.id === logFilterId)?.name : null;
+
   async function copyLog() {
-    await Clipboard.setStringAsync(lines.join("\n"));
+    await Clipboard.setStringAsync(shownLines.join("\n"));
     log("(log copied to clipboard)");
   }
 
@@ -236,6 +249,7 @@ export default function Settings() {
         </Text>
       ) : (
         <>
+      <View style={styles.section}>
       {/* Printers */}
       <SectionHeader>Printers</SectionHeader>
       {printers.list().length === 0 ? (
@@ -316,6 +330,15 @@ export default function Settings() {
                   />
                 )}
               </View>
+              <TouchableOpacity
+                style={styles.cardLogLink}
+                onPress={() => openLog(mp.id)}
+                hitSlop={8}
+                accessibilityLabel={`View ${mp.name} log`}
+              >
+                <Ionicons name="document-text-outline" size={13} color={colors.mutedFg} />
+                <Text style={styles.logMiniText}>View this printer's log</Text>
+              </TouchableOpacity>
             </View>
           );
         })
@@ -341,14 +364,16 @@ export default function Settings() {
       {coverageHint ? <Text style={[styles.hint, { marginTop: space.sm }]}>{coverageHint}</Text> : null}
       <TouchableOpacity
         style={styles.logMiniLink}
-        onPress={() => setLogOpen(true)}
+        onPress={() => openLog(null)}
         hitSlop={8}
-        accessibilityLabel="View printer log"
+        accessibilityLabel="View combined printer log"
       >
         <Ionicons name="document-text-outline" size={13} color={colors.mutedFg} />
-        <Text style={styles.logMiniText}>View printer log{lines.length ? ` (${lines.length})` : ""}</Text>
+        <Text style={styles.logMiniText}>View combined log{lines.length ? ` (${lines.length})` : ""}</Text>
       </TouchableOpacity>
+      </View>
 
+      <View style={styles.section}>
       {/* Print tuning */}
       <SectionHeader>Print tuning</SectionHeader>
       <View style={styles.tuneBlock}>
@@ -368,6 +393,9 @@ export default function Settings() {
         />
       </View>
 
+      </View>
+
+      <View style={styles.section}>
       {/* Box labels */}
       <SectionHeader>Box labels</SectionHeader>
       <Text style={styles.hint}>
@@ -420,6 +448,7 @@ export default function Settings() {
           Connect a large-label box printer and run a test print to choose QR content.
         </Text>
       ) : null}
+      </View>
 
         </>
       )}
@@ -433,11 +462,11 @@ export default function Settings() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHead}>
-              <Text style={styles.modalTitle}>Printer log</Text>
+              <Text style={styles.modalTitle}>{logTitleName ? `${logTitleName} log` : "Combined log"}</Text>
               <View style={styles.modalHeadActions}>
                 <TouchableOpacity
                   onPress={copyLog}
-                  disabled={lines.length === 0}
+                  disabled={shownLines.length === 0}
                   hitSlop={8}
                   style={styles.modalAction}
                 >
@@ -451,10 +480,12 @@ export default function Settings() {
               </View>
             </View>
             <ScrollView style={styles.logBox} contentContainerStyle={{ padding: space.md }}>
-              {lines.length === 0 ? (
-                <Text style={styles.logHint}>Connect, then Print test. Watch this log.</Text>
+              {shownLines.length === 0 ? (
+                <Text style={styles.logHint}>
+                  {logTitleName ? "No activity yet for this printer." : "Connect, then Print test. Watch this log."}
+                </Text>
               ) : (
-                lines.map((l, i) => (
+                shownLines.map((l, i) => (
                   <Text key={i} style={styles.logLine}>
                     {l}
                   </Text>
@@ -519,6 +550,17 @@ const styles = StyleSheet.create({
     color: colors.mutedFg,
     marginLeft: space.sm,
     fontStyle: "italic",
+  },
+  section: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: space.md },
+  cardLogLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: space.md,
+    paddingTop: space.sm,
+    paddingVertical: space.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   roleBlock: { marginTop: space.md },
   sizeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: space.xs },
