@@ -30,7 +30,14 @@ import {
   saveMode,
   setOnboarded,
 } from "../labelingMode";
-import { DEFAULT_LABEL, LabelSize, loadLabelSize } from "../labelSettings";
+import {
+  DEFAULT_LABEL,
+  DEFAULT_TUNING,
+  LabelSize,
+  PrintTuning,
+  loadLabelSize,
+  loadTuning,
+} from "../labelSettings";
 import { printer } from "../niimbot/connection";
 import { renderLabel } from "../niimbot/label";
 import { reserveCode, seedReservation } from "../reservation";
@@ -57,6 +64,7 @@ export default function Pack() {
   const [onboarded, setOnboardedState] = useState<boolean | null>(null);
   const [mode, setModeState] = useState<LabelingMode>(DEFAULT_MODE);
   const [labelSize, setLabelSize] = useState<LabelSize>(DEFAULT_LABEL);
+  const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
 
   const [screen, setScreen] = useState<Screen>("home");
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -72,6 +80,7 @@ export default function Pack() {
     isOnboarded().then(setOnboardedState);
     loadMode().then(setModeState);
     loadLabelSize().then(setLabelSize);
+    loadTuning().then(setTuning);
     void seedReservation();
     return printer.subscribe(() => force((n) => n + 1));
   }, []);
@@ -79,6 +88,7 @@ export default function Pack() {
     if (screen === "home") {
       loadMode().then(setModeState);
       loadLabelSize().then(setLabelSize);
+      loadTuning().then(setTuning);
     }
   }, [screen]);
 
@@ -151,7 +161,7 @@ export default function Pack() {
       edit({ itemCode: code });
       if (printer.connected && printer.client) {
         try {
-          await printer.client.printImage(renderLabel(code, labelSize));
+          await printer.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
           buzzOk();
           showToast(`Printed ${code}`);
         } catch {

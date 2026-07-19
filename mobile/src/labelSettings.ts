@@ -37,6 +37,39 @@ export function fitsQr(s: LabelSize): boolean {
   return Math.min(s.widthMm, s.heightMm) >= 20;
 }
 
+// Printer tuning the user can adjust for their hardware/stock.
+export interface PrintTuning {
+  density: number; // 1–5
+  labelType: number; // 1 gaps, 2 black-mark, 3 continuous
+}
+export const DEFAULT_TUNING: PrintTuning = { density: 3, labelType: 1 };
+export const LABEL_TYPES: { v: number; label: string }[] = [
+  { v: 1, label: "Gaps" },
+  { v: 3, label: "Continuous" },
+  { v: 2, label: "Black-mark" },
+];
+const TUNING_KEY = "moverse.printTuning";
+
+export async function loadTuning(): Promise<PrintTuning> {
+  try {
+    const raw = await AsyncStorage.getItem(TUNING_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (typeof p?.density === "number" && typeof p?.labelType === "number") return p;
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_TUNING;
+}
+export async function saveTuning(t: PrintTuning): Promise<void> {
+  try {
+    await AsyncStorage.setItem(TUNING_KEY, JSON.stringify(t));
+  } catch {
+    // best effort
+  }
+}
+
 export const DOTS_PER_MM = 8; // B1 is 203 dpi ≈ 8 px/mm
 export const HEAD_PX = 384; // B1 printhead width cap
 

@@ -15,11 +15,16 @@ import { printer } from "./niimbot/connection";
 import { makeTestImage } from "./niimbot/testImage";
 import {
   DEFAULT_LABEL,
+  DEFAULT_TUNING,
+  LABEL_TYPES,
   LabelSize,
+  PrintTuning,
   fitsQr,
   labelPx,
   loadLabelSize,
+  loadTuning,
   saveLabelSize,
+  saveTuning,
 } from "./labelSettings";
 import { LabelingMode, loadMode, saveMode } from "./labelingMode";
 import { colors, radius, space, type as t, HIT } from "./theme";
@@ -53,14 +58,24 @@ export default function Settings({ onClose }: { onClose: () => void }) {
   const [, force] = useState(0);
   const [mode, setMode] = useState<LabelingMode>("assign");
   const [label, setLabel] = useState<LabelSize>(DEFAULT_LABEL);
+  const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
   const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
 
   useEffect(() => {
     loadMode().then(setMode);
     loadLabelSize().then(setLabel);
+    loadTuning().then(setTuning);
     printer.log = log;
     return printer.subscribe(() => force((n) => n + 1));
   }, []);
+
+  function updateTuning(patch: Partial<PrintTuning>) {
+    setTuning((prev) => {
+      const next = { ...prev, ...patch };
+      void saveTuning(next);
+      return next;
+    });
+  }
 
   function pickMode(m: LabelingMode) {
     setMode(m);
@@ -109,8 +124,8 @@ export default function Settings({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       const { widthPx, heightPx } = labelPx(label);
-      log(`printing test ${widthPx}x${heightPx}…`);
-      await printer.client.printImage(makeTestImage(widthPx, heightPx), 3, 1);
+      log(`printing test ${widthPx}x${heightPx} (d${tuning.density}, type ${tuning.labelType})…`);
+      await printer.client.printImage(makeTestImage(widthPx, heightPx), tuning.density, tuning.labelType);
       log("print done");
     } catch (e) {
       log(`print stopped: ${String((e as Error)?.message ?? e)}`);
@@ -218,6 +233,39 @@ export default function Settings({ onClose }: { onClose: () => void }) {
           color={colors.accent}
         />
         <Text style={styles.format}>{fitsQr(label) ? "QR code + text" : "Text only"}</Text>
+      </View>
+
+      {/* Print tuning */}
+      <Text style={styles.section}>Print tuning</Text>
+      <View style={styles.tuneRow}>
+        <Text style={styles.tuneLabel}>Density</Text>
+        <View style={styles.seg}>
+          {[1, 2, 3, 4, 5].map((d) => (
+            <TouchableOpacity
+              key={d}
+              style={[styles.segItem, tuning.density === d && styles.segItemOn]}
+              onPress={() => updateTuning({ density: d })}
+            >
+              <Text style={[styles.segText, tuning.density === d && styles.segTextOn]}>{d}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+      <View style={styles.tuneRow}>
+        <Text style={styles.tuneLabel}>Label type</Text>
+        <View style={styles.seg}>
+          {LABEL_TYPES.map((lt) => (
+            <TouchableOpacity
+              key={lt.v}
+              style={[styles.segItem, tuning.labelType === lt.v && styles.segItemOn]}
+              onPress={() => updateTuning({ labelType: lt.v })}
+            >
+              <Text style={[styles.segText, tuning.labelType === lt.v && styles.segTextOn]}>
+                {lt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {/* Log */}
@@ -376,6 +424,13 @@ const styles = StyleSheet.create({
   },
   formatRow: { flexDirection: "row", alignItems: "center", marginTop: space.md },
   format: { ...t.bodyStrong, color: colors.accent, marginLeft: space.sm },
+  tuneRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: space.sm },
+  tuneLabel: { ...t.caption, color: colors.mutedFg },
+  seg: { flexDirection: "row", borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, overflow: "hidden" },
+  segItem: { minWidth: 44, minHeight: 40, paddingHorizontal: space.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
+  segItemOn: { backgroundColor: colors.primary },
+  segText: { ...t.bodyStrong, color: colors.fg },
+  segTextOn: { color: colors.onPrimary },
   logHeader: {
     flexDirection: "row",
     alignItems: "flex-end",
