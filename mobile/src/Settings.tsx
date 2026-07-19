@@ -65,6 +65,11 @@ export default function Settings({ onClose }: { onClose: () => void }) {
   function pickMode(m: LabelingMode) {
     setMode(m);
     void saveMode(m);
+    // Printing only applies to "assign" — drop any printer link otherwise.
+    if (m !== "assign" && printer.connected) {
+      void printer.disconnect();
+      log("printer disconnected (not used in this mode)");
+    }
   }
   function updateLabel(patch: Partial<LabelSize>) {
     setLabel((prev) => {
@@ -167,6 +172,12 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         );
       })}
 
+      {mode !== "assign" ? (
+        <Text style={[styles.hint, { marginTop: space.lg }]}>
+          Printer and label options appear when “App assigns codes” is selected.
+        </Text>
+      ) : (
+        <>
       {/* Printer */}
       <Text style={styles.section}>Printer (NIIMBOT B1)</Text>
       <View style={styles.stateRow}>
@@ -234,6 +245,8 @@ export default function Settings({ onClose }: { onClose: () => void }) {
           ))
         )}
       </View>
+        </>
+      )}
     </ScrollView>
   );
 }
