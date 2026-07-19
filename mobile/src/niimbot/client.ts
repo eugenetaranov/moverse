@@ -121,7 +121,9 @@ export class NiimbotClient {
   // one-per-MTU-chunk — the difference between a slow and a fast dense print.
   private ackMode: "unknown" | "ack" | "noack" = "unknown";
   private rowBuf: number[] = [];
-  private static readonly ROW_FLUSH_BYTES = 900; // ≈ a few MTU chunks
+  // Smaller batches interleave better with a small-buffer printer (D110) so the
+  // acked stream doesn't stall; each flush is still one acked, MTU-chunked write.
+  private static readonly ROW_FLUSH_BYTES = 480;
 
   private queueRow(type: number, data: number[]): void {
     const bytes = new NiimbotPacket(type, Uint8Array.from(data)).toBytes();
@@ -222,7 +224,10 @@ export class NiimbotClient {
           this.queueRow(T.BITMAP_ROW, [...u16(y), ...parts, repeat, ...row]);
         }
       }
-      if (this.rowBuf.length >= NiimbotClient.ROW_FLUSH_BYTES) await this.flushRows();
+      if (this.rowBuf.length >= NiimbotClient.ROW_FLUSH_BYTES) {
+        await this.flushRows();
+        await sleep(4); // brief pacing so a small-buffer printer keeps up
+      }
       const prev = y;
       y += repeat;
       if (Math.floor(prev / 64) !== Math.floor(y / 64)) this.log(`row ${y}/${img.height}`);

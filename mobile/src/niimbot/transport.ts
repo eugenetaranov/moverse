@@ -9,7 +9,18 @@ import { isNiimbotName } from "./models";
 const SERVICE = "e7810a71-73ae-499d-8c15-faa9aef0c3f2";
 const CHAR = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f";
 
+// A single BLE write should ack well within this even under flow-control
+// backpressure; beyond it the link is stalled and we fail rather than hang.
+const WRITE_TIMEOUT_MS = 10000;
+
 type Log = (s: string) => void;
+
+function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_resolve, reject) => setTimeout(() => reject(new Error(msg)), ms)),
+  ]);
+}
 
 // A printer found during a scan.
 export interface PrinterCandidate {
@@ -169,22 +180,27 @@ export class BleTransport {
     if (!this.device) throw new Error("not connected");
     for (let i = 0; i < bytes.length; i += this.chunk) {
       const slice = bytes.subarray(i, i + this.chunk);
-      await this.device.writeCharacteristicWithoutResponseForService(
-        SERVICE,
-        CHAR,
-        fromByteArray(slice),
+      await withTimeout(
+        this.device.writeCharacteristicWithoutResponseForService(SERVICE, CHAR, fromByteArray(slice)),
+        WRITE_TIMEOUT_MS,
+        "write timeout",
       );
     }
   }
 
   // Acknowledged write — the peripheral confirms each write, giving guaranteed
   // delivery + flow control for bulk image data. Throws if the characteristic
-  // doesn't support write-with-response (caller falls back to write()).
+  // doesn't support write-with-response (caller falls back to write()). A stalled
+  // ack (dead BLE link) rejects via the timeout instead of hanging the print.
   async writeAck(bytes: Uint8Array): Promise<void> {
     if (!this.device) throw new Error("not connected");
     for (let i = 0; i < bytes.length; i += this.chunk) {
       const slice = bytes.subarray(i, i + this.chunk);
-      await this.device.writeCharacteristicWithResponseForService(SERVICE, CHAR, fromByteArray(slice));
+      await withTimeout(
+        this.device.writeCharacteristicWithResponseForService(SERVICE, CHAR, fromByteArray(slice)),
+        WRITE_TIMEOUT_MS,
+        "write-ack timeout",
+      );
     }
   }
 

@@ -313,12 +313,17 @@ export default function Pack() {
       await p.client.printImage(renderLabel(code, p.labelSize, p.model.widthPx), tuning.density, tuning.labelType);
       buzzOk();
       setPrintStatus("done");
-    } catch {
+    } catch (e) {
+      // A user-initiated cancel is not a failure — reset quietly.
+      if (String((e as Error)?.message ?? e).includes("cancel")) {
+        setPrintStatus("idle");
+        return;
+      }
       buzzErr();
       setPrintStatus("failed");
       Alert.alert(
         "Print failed",
-        `Couldn't print label ${code} — the printer may have disconnected. Retry, or write the code by hand.`,
+        `Couldn't print label ${code} — the printer may be busy or out of range. Retry, or write the code by hand.`,
         [
           { text: "Retry", onPress: () => void printLabel(code) },
           { text: "Write by hand" },
@@ -326,6 +331,12 @@ export default function Pack() {
         ],
       );
     }
+  }
+
+  // Abort an in-flight item print (label screen). The client aborts between rows
+  // or when the current write times out; the printLabel catch resets to idle.
+  function cancelItemPrint() {
+    printers.printerForKind("item")?.client.cancel();
   }
 
   // Print a box label (code + QR/text + saved extra text) for a box being set.
@@ -581,12 +592,20 @@ export default function Pack() {
                   : ""}
         </Text>
         <View style={{ height: space.md }} />
-        {printers.printerForKind("item") ? (
+        {printStatus === "printing" ? (
+          <SecondaryButton
+            title="Cancel print"
+            icon="close"
+            tone="danger"
+            onPress={cancelItemPrint}
+            style={styles.stretchBtn}
+          />
+        ) : printers.printerForKind("item") ? (
           <SecondaryButton
             title={printStatus === "failed" ? "Retry print" : "Print again"}
             icon="print-outline"
             onPress={() => printLabel()}
-            disabled={printStatus === "printing" || busy}
+            disabled={busy}
             style={styles.stretchBtn}
           />
         ) : (
