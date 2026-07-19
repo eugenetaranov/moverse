@@ -90,6 +90,14 @@ export default function Pack() {
   const [count, setCount] = useState(0);
   const [, force] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [flash, setFlash] = useState<{ kind: "success" | "error"; msg: string } | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showFlash(kind: "success" | "error", msg: string) {
+    setFlash({ kind, msg });
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), kind === "error" ? 2400 : 1500);
+  }
 
   useEffect(() => {
     isOnboarded().then(setOnboardedState);
@@ -269,7 +277,8 @@ export default function Pack() {
       });
       buzzOk();
       const shown = res.itemCode ?? code;
-      showToast(
+      showFlash(
+        "success",
         res.action === "exists"
           ? `${shown} already in ${box}`
           : res.action === "added"
@@ -281,7 +290,7 @@ export default function Pack() {
       setDescribeState("idle");
     } catch (e) {
       buzzErr();
-      Alert.alert("Save failed", String(e) + "\nYour entry is kept — try again.");
+      showFlash("error", `Save failed — your entry is kept. ${String((e as Error)?.message ?? e)}`);
     } finally {
       setSaving(false);
     }
@@ -320,7 +329,7 @@ export default function Pack() {
           Moverse needs camera access to scan labels and photograph items.
         </Text>
         <View style={{ height: space.lg }} />
-        <PrimaryButton title="Grant camera access" onPress={requestPermission} icon="camera" />
+        <PrimaryButton title="Grant camera access" onPress={requestPermission} icon="camera" style={styles.stretchBtn} />
       </Center>
     );
 
@@ -375,7 +384,7 @@ export default function Pack() {
           icon="arrow-forward"
           accent
           onPress={() => setScreen("photo")}
-          style={{ alignSelf: "stretch" }}
+          style={styles.stretchBtn}
         />
         <View style={{ height: space.sm }} />
         <SecondaryButton
@@ -384,6 +393,7 @@ export default function Pack() {
             edit({ itemCode: "" });
             setScreen("home");
           }}
+          style={styles.stretchBtn}
         />
       </Center>
     );
@@ -416,6 +426,7 @@ export default function Pack() {
             icon="print-outline"
             onPress={() => printLabel()}
             disabled={printStatus === "printing" || busy}
+            style={styles.stretchBtn}
           />
         ) : (
           <PrimaryButton
@@ -423,7 +434,7 @@ export default function Pack() {
             icon="bluetooth"
             onPress={connectPrinter}
             disabled={busy}
-            style={{ alignSelf: "stretch" }}
+            style={styles.stretchBtn}
           />
         )}
         <View style={{ height: space.sm }} />
@@ -431,10 +442,10 @@ export default function Pack() {
           title="Add photo"
           icon="camera-outline"
           onPress={() => setScreen("photo")}
-          style={{ alignSelf: "stretch" }}
+          style={styles.stretchBtn}
         />
         <View style={{ height: space.sm }} />
-        <SecondaryButton title="Done" onPress={() => setScreen("home")} />
+        <SecondaryButton title="Done" onPress={() => setScreen("home")} style={styles.stretchBtn} />
       </Center>
     );
 
@@ -534,30 +545,36 @@ export default function Pack() {
           </>
         ) : null}
 
-        <FieldLabel text="Description / notes" done={descOk} />
+        <View style={styles.descHeader}>
+          <FieldLabel text="Description / notes" done={descOk} />
+          <TouchableOpacity
+            onPress={() => autoDescribe(draft.photoBase64)}
+            disabled={!draft.photoBase64 || describeState === "loading"}
+            hitSlop={8}
+            style={styles.aiLink}
+            accessibilityLabel="Auto-describe from photo"
+          >
+            <Ionicons
+              name="sparkles-outline"
+              size={13}
+              color={draft.photoBase64 ? colors.accent : colors.border}
+            />
+            <Text style={[styles.aiLinkText, { color: draft.photoBase64 ? colors.accent : colors.border }]}>
+              {describeState === "loading" ? "Describing…" : "Auto-describe"}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <TextField
           multiline
           value={draft.description}
           onChangeText={(v) => edit({ description: v })}
           placeholder="Describe the item, or add a note…"
         />
-        <View style={styles.aiRow}>
-          <SecondaryButton
-            title="Auto-describe"
-            icon="sparkles-outline"
-            onPress={() => autoDescribe(draft.photoBase64)}
-            disabled={!draft.photoBase64 || describeState === "loading"}
-          />
-          {describeState !== "idle" ? (
-            <Text style={styles.aiState} numberOfLines={2}>
-              {describeState === "loading"
-                ? "Describing…"
-                : describeState === "off"
-                  ? "AI off — type it in"
-                  : "Suggestion added — edit if needed"}
-            </Text>
-          ) : null}
-        </View>
+        {describeState === "off" ? (
+          <Text style={styles.aiHint}>AI off — type it in.</Text>
+        ) : describeState === "done" ? (
+          <Text style={styles.aiHint}>AI suggestion added — edit if needed.</Text>
+        ) : null}
       </ScrollView>
 
       {!draftEmpty && !canSave && !saving ? (
@@ -589,6 +606,25 @@ export default function Pack() {
           />
         )}
       </View>
+
+      {saving || flash ? (
+        <View style={styles.saveOverlay} pointerEvents="auto">
+          {saving ? (
+            <View style={styles.saveCard}>
+              <ActivityIndicator color="#fff" size="large" />
+              <Text style={styles.saveOverlayText}>Saving…</Text>
+            </View>
+          ) : flash ? (
+            <View style={styles.saveCard}>
+              <View style={[styles.flashCircle, flash.kind === "success" ? styles.flashOk : styles.flashErr]}>
+                <Ionicons name={flash.kind === "success" ? "checkmark" : "close"} size={40} color="#fff" />
+              </View>
+              <Text style={styles.saveOverlayText}>{flash.msg}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       <StatusBar style="dark" />
     </View>
   );
@@ -637,7 +673,7 @@ function Onboarding({ onPick }: { onPick: (m: LabelingMode) => void }) {
       <Text style={styles.h1}>How do you label items?</Text>
       <Text style={styles.bodyCenter}>You can change this anytime in Settings.</Text>
       <View style={{ height: space.lg }} />
-      <View style={{ alignSelf: "stretch" }}>
+      <View style={styles.stretchBtn}>
         {cards.map((c) => (
           <SelectableCard
             key={c.m}
@@ -715,7 +751,7 @@ function SetBox({
 
       <Text style={styles.orText}>or type / scan a new one</Text>
       <TextField
-        style={{ alignSelf: "stretch" }}
+        style={styles.stretchBtn}
         value={text}
         onChangeText={setText}
         placeholder="e.g. BOX-0007 or Kitchen"
@@ -723,11 +759,11 @@ function SetBox({
         autoCorrect={false}
       />
       <View style={{ height: space.md }} />
-      <PrimaryButton title="Set box" onPress={() => onSet(text)} disabled={text.trim() === ""} style={{ alignSelf: "stretch" }} />
+      <PrimaryButton title="Set box" onPress={() => onSet(text)} disabled={text.trim() === ""} style={styles.stretchBtn} />
       <View style={{ height: space.sm }} />
-      <SecondaryButton title="Scan a box label" icon="qr-code-outline" onPress={onScan} />
+      <SecondaryButton title="Scan a box label" icon="qr-code-outline" onPress={onScan} style={styles.stretchBtn} />
       <View style={{ height: space.sm }} />
-      <SecondaryButton title="Cancel" onPress={onCancel} />
+      <SecondaryButton title="Cancel" onPress={onCancel} style={styles.stretchBtn} />
     </ScrollView>
   );
 }
@@ -814,9 +850,12 @@ const styles = StyleSheet.create({
   multiline: { minHeight: 76, paddingTop: space.md, paddingBottom: space.md, textAlignVertical: "top" },
   inputBad: { borderColor: colors.warning, backgroundColor: "#FFFBEB" },
   warn: { color: colors.warning, fontSize: 13, marginTop: space.xs, fontWeight: "600" },
-  aiRow: { flexDirection: "row", alignItems: "center", marginTop: space.sm },
-  aiState: { ...t.caption, color: colors.mutedFg, flex: 1, marginLeft: space.md },
+  descHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  aiLink: { flexDirection: "row", alignItems: "center", gap: 4 },
+  aiLinkText: { fontSize: 12, fontWeight: "700" },
+  aiHint: { ...t.caption, color: colors.mutedFg, marginTop: space.xs },
   bodyCenter: { ...t.body, color: colors.mutedFg, textAlign: "center" },
+  stretchBtn: { alignSelf: "stretch" },
   setBoxScreen: { flex: 1, backgroundColor: colors.bg },
   setBoxContent: { padding: space.xl, paddingTop: 56, paddingBottom: space.xxl },
   dropdown: {
@@ -914,4 +953,16 @@ const styles = StyleSheet.create({
     paddingTop: space.sm,
     backgroundColor: colors.surface,
   },
+  saveOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: space.xl,
+  },
+  saveCard: { alignItems: "center", gap: space.md },
+  saveOverlayText: { color: "#fff", fontSize: 17, fontWeight: "700", textAlign: "center" },
+  flashCircle: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center" },
+  flashOk: { backgroundColor: colors.accent },
+  flashErr: { backgroundColor: colors.destructive },
 });

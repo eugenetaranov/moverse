@@ -215,6 +215,15 @@ export default function Settings() {
           />
         )}
       </View>
+      <TouchableOpacity
+        style={styles.logMiniLink}
+        onPress={() => setLogOpen(true)}
+        hitSlop={8}
+        accessibilityLabel="View printer log"
+      >
+        <Ionicons name="document-text-outline" size={13} color={colors.mutedFg} />
+        <Text style={styles.logMiniText}>View printer log{lines.length ? ` (${lines.length})` : ""}</Text>
+      </TouchableOpacity>
 
       {/* Label size */}
       <SectionHeader>Label size (mm)</SectionHeader>
@@ -251,17 +260,6 @@ export default function Settings() {
         />
       </View>
 
-      {/* Log lives in a modal so it doesn't clutter the screen */}
-      <View style={{ height: space.lg }} />
-      <TouchableOpacity
-        style={styles.logLink}
-        onPress={() => setLogOpen(true)}
-        accessibilityLabel="View printer log"
-      >
-        <Ionicons name="document-text-outline" size={16} color={colors.mutedFg} />
-        <Text style={styles.logLinkText}>View printer log{lines.length ? ` (${lines.length})` : ""}</Text>
-        <Ionicons name="chevron-forward" size={16} color={colors.mutedFg} />
-      </TouchableOpacity>
         </>
       )}
 
@@ -276,11 +274,18 @@ export default function Settings() {
             <View style={styles.modalHead}>
               <Text style={styles.modalTitle}>Printer log</Text>
               <View style={styles.modalHeadActions}>
-                <TouchableOpacity onPress={copyLog} disabled={lines.length === 0} hitSlop={8}>
-                  <Ionicons name="copy-outline" size={20} color={colors.accent} />
+                <TouchableOpacity
+                  onPress={copyLog}
+                  disabled={lines.length === 0}
+                  hitSlop={8}
+                  style={styles.modalAction}
+                >
+                  <Ionicons name="copy-outline" size={16} color={colors.accent} />
+                  <Text style={styles.modalActionText}>Copy</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => setLogOpen(false)} hitSlop={8}>
-                  <Ionicons name="close" size={22} color={colors.fg} />
+                <TouchableOpacity onPress={() => setLogOpen(false)} hitSlop={8} style={styles.modalAction}>
+                  <Ionicons name="close" size={16} color={colors.fg} />
+                  <Text style={[styles.modalActionText, { color: colors.fg }]}>Hide</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -350,18 +355,10 @@ const styles = StyleSheet.create({
   format: { ...t.bodyStrong, color: colors.accent, marginLeft: space.sm },
   tuneBlock: { marginBottom: space.md },
   tuneLabel: { ...t.caption, color: colors.mutedFg, marginBottom: space.xs },
-  logLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.sm,
-    minHeight: HIT,
-    paddingHorizontal: space.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  logLinkText: { ...t.bodyStrong, color: colors.fg, flex: 1 },
+  logMiniLink: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: space.sm, paddingVertical: space.xs },
+  logMiniText: { ...t.caption, color: colors.mutedFg, textDecorationLine: "underline" },
+  modalAction: { flexDirection: "row", alignItems: "center", gap: 4 },
+  modalActionText: { color: colors.accent, fontWeight: "700", fontSize: 14 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.5)", justifyContent: "flex-end" },
   modalCard: {
     backgroundColor: colors.surface,
