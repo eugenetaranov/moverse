@@ -1,11 +1,11 @@
 import React, { useEffect, useLayoutEffect, useState } from "react";
-import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Image, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { BrowseStackParamList } from "../navTypes";
 import { Item, clearInventoryCache, updateItem } from "../inventory";
-import { PrimaryButton, SecondaryButton, FieldLabel, Badge, Chip } from "../ui";
-import { colors, radius, space, type as t, HIT } from "../theme";
+import { PrimaryButton, SecondaryButton, FieldLabel, TextField, Badge, Chip } from "../ui";
+import { colors, radius, space, type as t } from "../theme";
 import { isWithMe } from "./cards";
 import Scanner from "../Scanner";
 
@@ -104,14 +104,7 @@ export default function ItemDetail({ route, navigation }: Props) {
       </View>
 
       <FieldLabel text="Description / notes" />
-      <TextInput
-        style={[styles.input, styles.multiline]}
-        value={desc}
-        onChangeText={setDesc}
-        placeholder="Describe the item, or add a note…"
-        placeholderTextColor={colors.mutedFg}
-        multiline
-      />
+      <TextField multiline value={desc} onChangeText={setDesc} placeholder="Describe the item, or add a note…" />
       <View style={{ height: space.sm }} />
       <PrimaryButton
         title={saving ? "Saving…" : "Save description"}
@@ -145,17 +138,6 @@ const styles = StyleSheet.create({
   photoEmpty: { alignItems: "center", justifyContent: "center" },
   codeRow: { flexDirection: "row", alignItems: "center", gap: space.md, marginTop: space.lg },
   code: { ...t.h1, color: colors.fg },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    minHeight: HIT,
-    fontSize: 16,
-    color: colors.fg,
-    backgroundColor: colors.surface,
-  },
-  multiline: { minHeight: 88, paddingTop: space.md, paddingBottom: space.md, textAlignVertical: "top" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: space.sm },
   noBox: { ...t.caption, color: colors.mutedFg, fontStyle: "italic" },
   hint: { ...t.caption, color: colors.mutedFg, marginTop: space.sm },

@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { BrowseStackParamList } from "../navTypes";
 import { Box, Item, loadInventory, updateBox } from "../inventory";
-import { PrimaryButton, Segmented, FieldLabel, LoadingState, EmptyState, ErrorState } from "../ui";
-import { colors, radius, space, type as t, HIT } from "../theme";
+import { PrimaryButton, Segmented, FieldLabel, TextField, LoadingState, EmptyState, ErrorState } from "../ui";
+import { colors, space, type as t } from "../theme";
 import { ItemCard, isSuitcase, isWithMe } from "./cards";
 
 type Props = NativeStackScreenProps<BrowseStackParamList, "BoxDetail">;
@@ -90,13 +90,7 @@ export default function BoxDetail({ route, navigation }: Props) {
       ListHeaderComponent={
         <View style={styles.header}>
           <FieldLabel text="Name / notes" />
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Winter clothes"
-            placeholderTextColor={colors.mutedFg}
-          />
+          <TextField value={name} onChangeText={setName} placeholder="e.g. Winter clothes" />
           <FieldLabel text="Type" />
           <Segmented options={TYPES} value={type} onChange={setType} />
           <FieldLabel text="Destination" />
@@ -123,15 +117,5 @@ const styles = StyleSheet.create({
   grid: { padding: space.lg, gap: space.md },
   col: { gap: space.md },
   header: { marginBottom: space.sm },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    minHeight: HIT,
-    fontSize: 16,
-    color: colors.fg,
-    backgroundColor: colors.surface,
-  },
   count: { ...t.label, color: colors.mutedFg, marginTop: space.lg },
 });
