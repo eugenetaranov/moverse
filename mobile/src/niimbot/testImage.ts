@@ -1,11 +1,11 @@
 import type { Bitmap } from "./client";
 
-// A recognizable 1bpp test pattern (border + diagonals + a filled block) to
-// prove the printer renders our bitmap correctly. 384px = full B1 head width.
-export function makeTestImage(): Bitmap {
-  const width = 384;
-  const height = 96;
-  const bytesPerRow = width / 8; // 48
+// A recognizable 1bpp test pattern (border + diagonals + a filled block) sized
+// to the actual label, so the printed area feeds fully out of the mechanism.
+export function makeTestImage(width = 384, height = 240): Bitmap {
+  width = Math.min(Math.max(8, width), 384);
+  height = Math.max(8, height);
+  const bytesPerRow = Math.ceil(width / 8);
   const data = new Uint8Array(bytesPerRow * height);
   const set = (x: number, y: number) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return;
@@ -23,13 +23,20 @@ export function makeTestImage(): Bitmap {
       set(t, y);
       set(width - 1 - t, y);
     }
-  // crossing diagonals
-  for (let i = 0; i < Math.min(width, height); i++) {
-    set(i, i);
-    set(width - 1 - i, i);
+  // crossing diagonals across the full label
+  const steps = Math.max(width, height);
+  for (let i = 0; i < steps; i++) {
+    const x = Math.round((i / steps) * (width - 1));
+    const y = Math.round((i / steps) * (height - 1));
+    set(x, y);
+    set(width - 1 - x, y);
   }
   // filled centre block
-  for (let y = 30; y < 66; y++) for (let x = 160; x < 224; x++) set(x, y);
+  const bw = Math.round(width * 0.2);
+  const bh = Math.round(height * 0.2);
+  const cx = Math.round(width / 2);
+  const cy = Math.round(height / 2);
+  for (let y = cy - bh; y < cy + bh; y++) for (let x = cx - bw; x < cx + bw; x++) set(x, y);
 
   return { width, height, data };
 }

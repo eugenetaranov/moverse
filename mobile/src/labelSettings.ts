@@ -36,3 +36,14 @@ export async function saveLabelSize(s: LabelSize): Promise<void> {
 export function fitsQr(s: LabelSize): boolean {
   return Math.min(s.widthMm, s.heightMm) >= 20;
 }
+
+export const DOTS_PER_MM = 8; // B1 is 203 dpi ≈ 8 px/mm
+export const HEAD_PX = 384; // B1 printhead width cap
+
+// Pixel dimensions of the printed bitmap for a label size.
+export function labelPx(s: LabelSize): { widthPx: number; heightPx: number } {
+  return {
+    widthPx: Math.min(Math.round(s.widthMm * DOTS_PER_MM), HEAD_PX),
+    heightPx: Math.round(s.heightMm * DOTS_PER_MM),
+  };
+}

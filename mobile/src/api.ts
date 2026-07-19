@@ -18,7 +18,7 @@ export async function describe(imageBase64: string): Promise<string> {
 }
 
 export interface SavePayload {
-  itemCode: string;
+  itemCode?: string; // omitted in "No codes" mode; the server mints one
   boxCode: string;
   description: string;
   imageBase64: string;
@@ -30,6 +30,7 @@ export type SaveAction = "created" | "added" | "exists";
 export interface SaveResult {
   itemId: string;
   action: SaveAction;
+  itemCode?: string; // the code the item ended up with (esp. a server-minted one)
 }
 
 // The next ITM-#### code to assign, from the backend (Airtable max + 1).
@@ -48,6 +49,6 @@ export async function save(payload: SavePayload): Promise<SaveResult> {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`save failed (${res.status})`);
-  const data = (await res.json()) as { itemId?: string; action?: SaveAction };
-  return { itemId: data.itemId ?? "", action: data.action ?? "created" };
+  const data = (await res.json()) as { itemId?: string; action?: SaveAction; itemCode?: string };
+  return { itemId: data.itemId ?? "", action: data.action ?? "created", itemCode: data.itemCode };
 }

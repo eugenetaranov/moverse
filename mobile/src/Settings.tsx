@@ -9,10 +9,18 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { BleTransport } from "./niimbot/transport";
-import { NiimbotClient } from "./niimbot/client";
+import { Ionicons } from "@expo/vector-icons";
+import { printer } from "./niimbot/connection";
 import { makeTestImage } from "./niimbot/testImage";
-import { DEFAULT_LABEL, LabelSize, fitsQr, loadLabelSize, saveLabelSize } from "./labelSettings";
+import {
+  DEFAULT_LABEL,
+  LabelSize,
+  fitsQr,
+  labelPx,
+  loadLabelSize,
+  saveLabelSize,
+} from "./labelSettings";
+import { LabelingMode, loadMode, saveMode } from "./labelingMode";
 
 async function requestBlePermissions(): Promise<boolean> {
   if (Platform.OS !== "android") return true;
@@ -29,20 +37,31 @@ async function requestBlePermissions(): Promise<boolean> {
   return Object.values(res).every((v) => v === PermissionsAndroid.RESULTS.GRANTED);
 }
 
+const MODES: { key: LabelingMode; title: string; sub: string }[] = [
+  { key: "scan", title: "Scan pre-made labels", sub: "Printed sheets / rolls — scan each" },
+  { key: "assign", title: "App assigns codes", sub: "Print or hand-write the next code" },
+  { key: "none", title: "No codes", sub: "Just name a box, photograph items" },
+];
+
 export default function Settings({ onClose }: { onClose: () => void }) {
   const [lines, setLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [connectedName, setConnectedName] = useState<string | null>(null);
+  const [, force] = useState(0);
+  const [mode, setMode] = useState<LabelingMode>("assign");
   const [label, setLabel] = useState<LabelSize>(DEFAULT_LABEL);
-  const transport = useRef<BleTransport | null>(null);
-  const client = useRef<NiimbotClient | null>(null);
-
   const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
 
   useEffect(() => {
+    loadMode().then(setMode);
     loadLabelSize().then(setLabel);
+    printer.log = log;
+    return printer.subscribe(() => force((n) => n + 1));
   }, []);
 
+  function pickMode(m: LabelingMode) {
+    setMode(m);
+    void saveMode(m);
+  }
   function updateLabel(patch: Partial<LabelSize>) {
     setLabel((prev) => {
       const next = { ...prev, ...patch };
@@ -59,43 +78,30 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         return;
       }
       log("scanning for printer…");
-      const t = new BleTransport(log);
-      const name = await t.connect("b1");
-      transport.current = t;
-      client.current = new NiimbotClient(t, log);
-      setConnectedName(name);
-      log(`connected: ${name}`);
+      await printer.connect("b1");
+      log(`connected: ${printer.name}`);
     } catch (e) {
       log(`connect failed: ${String((e as Error)?.message ?? e)}`);
     } finally {
       setBusy(false);
     }
   }
-
   async function disconnect() {
     setBusy(true);
     try {
-      await transport.current?.disconnect();
-    } catch {
-      // ignore
-    } finally {
-      transport.current = null;
-      client.current = null;
-      setConnectedName(null);
+      await printer.disconnect();
       log("disconnected");
+    } finally {
       setBusy(false);
     }
   }
-
   async function printTest() {
-    if (!client.current) {
-      log("connect first");
-      return;
-    }
+    if (!printer.client) return;
     setBusy(true);
     try {
-      log("printing test label…");
-      await client.current.printImage(makeTestImage(), 3, 1);
+      const { widthPx, heightPx } = labelPx(label);
+      log(`printing test ${widthPx}x${heightPx}…`);
+      await printer.client.printImage(makeTestImage(widthPx, heightPx), 3, 1);
     } catch (e) {
       log(`print failed: ${String((e as Error)?.message ?? e)}`);
     } finally {
@@ -103,8 +109,10 @@ export default function Settings({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const assign = mode === "assign";
+
   return (
-    <View style={styles.screen}>
+    <ScrollView style={styles.screen} contentContainerStyle={{ padding: 16, paddingTop: 56 }}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Settings</Text>
         <TouchableOpacity onPress={onClose} hitSlop={10}>
@@ -112,45 +120,61 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         </TouchableOpacity>
       </View>
 
-      {/* Printer */}
+      {/* Labeling mode */}
+      <Text style={styles.section}>How do you label items?</Text>
+      {MODES.map((m) => {
+        const on = mode === m.key;
+        return (
+          <TouchableOpacity
+            key={m.key}
+            style={[styles.modeCard, on && styles.modeCardOn]}
+            onPress={() => pickMode(m.key)}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={on ? "radio-button-on" : "radio-button-off"}
+              size={22}
+              color={on ? "#111" : "#999"}
+            />
+            <View style={{ marginLeft: 10, flex: 1 }}>
+              <Text style={styles.modeTitle}>{m.title}</Text>
+              <Text style={styles.modeSub}>{m.sub}</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+
+      {/* Printer — relevant to the assign branch */}
       <Text style={styles.section}>Printer (NIIMBOT B1)</Text>
       <Text style={styles.state}>
-        {connectedName ? `● Connected: ${connectedName}` : "○ Not connected"}
+        {printer.connected ? `● Connected: ${printer.name}` : "○ Not connected"}
       </Text>
+      {!assign ? (
+        <Text style={styles.hint}>
+          Used when “App assigns codes” is selected — connect to print a label per item.
+        </Text>
+      ) : null}
       <View style={styles.row}>
-        {connectedName ? (
+        {printer.connected ? (
           <Btn title="Disconnect" onPress={disconnect} disabled={busy} />
         ) : (
           <Btn title="Connect" onPress={connect} disabled={busy} />
         )}
-        <Btn title="Print test label" onPress={printTest} disabled={busy || !connectedName} />
+        <Btn title="Print test label" onPress={printTest} disabled={busy || !printer.connected} />
       </View>
 
       {/* Label size */}
       <Text style={styles.section}>Label size (mm)</Text>
-      <Text style={styles.hint}>
-        Set this if it isn't detected automatically. Determines whether labels print as QR + text or
-        text-only.
-      </Text>
+      <Text style={styles.hint}>Determines whether labels print as QR + text or text-only.</Text>
       <View style={styles.row}>
-        <Field
-          label="Width"
-          value={label.widthMm}
-          onChange={(n) => updateLabel({ widthMm: n })}
-        />
-        <Field
-          label="Height"
-          value={label.heightMm}
-          onChange={(n) => updateLabel({ heightMm: n })}
-        />
+        <Field label="Width" value={label.widthMm} onChange={(n) => updateLabel({ widthMm: n })} />
+        <Field label="Height" value={label.heightMm} onChange={(n) => updateLabel({ heightMm: n })} />
       </View>
-      <Text style={styles.format}>
-        Format: {fitsQr(label) ? "QR code + text" : "text only"}
-      </Text>
+      <Text style={styles.format}>Format: {fitsQr(label) ? "QR code + text" : "text only"}</Text>
 
       {/* Log */}
       <Text style={styles.section}>Log</Text>
-      <ScrollView style={styles.logBox} contentContainerStyle={{ padding: 10 }}>
+      <View style={styles.logBox}>
         {lines.length === 0 ? (
           <Text style={styles.logHint}>Connect, then Print test label. Watch this log.</Text>
         ) : (
@@ -160,8 +184,8 @@ export default function Settings({ onClose }: { onClose: () => void }) {
             </Text>
           ))
         )}
-      </ScrollView>
-    </View>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -177,6 +201,8 @@ function Btn({ title, onPress, disabled }: { title: string; onPress: () => void;
   );
 }
 
+// Free-edit numeric field: keeps a local string so the value can be cleared and
+// retyped; commits a clamped number on blur.
 function Field({
   label,
   value,
@@ -186,16 +212,25 @@ function Field({
   value: number;
   onChange: (n: number) => void;
 }) {
+  const [text, setText] = useState(String(value));
+  const editing = useRef(false);
+  useEffect(() => {
+    if (!editing.current) setText(String(value));
+  }, [value]);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         style={styles.input}
-        keyboardType="numeric"
-        value={String(value)}
-        onChangeText={(t) => {
-          const n = parseInt(t.replace(/[^0-9]/g, ""), 10);
-          if (!Number.isNaN(n)) onChange(n);
+        keyboardType="number-pad"
+        value={text}
+        onFocus={() => (editing.current = true)}
+        onChangeText={(t) => setText(t.replace(/[^0-9]/g, ""))}
+        onBlur={() => {
+          editing.current = false;
+          const n = Math.min(120, Math.max(5, parseInt(text || "0", 10) || 0));
+          onChange(n);
+          setText(String(n));
         }}
       />
     </View>
@@ -203,7 +238,7 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#fff", paddingTop: 56, paddingHorizontal: 16 },
+  screen: { flex: 1, backgroundColor: "#fff" },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -218,10 +253,22 @@ const styles = StyleSheet.create({
     color: "#555",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginTop: 20,
+    marginTop: 22,
     marginBottom: 8,
   },
-  state: { fontSize: 15, fontWeight: "600", marginBottom: 10 },
+  modeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+  },
+  modeCardOn: { borderColor: "#111", backgroundColor: "#f5f5f5" },
+  modeTitle: { fontSize: 15, fontWeight: "700", color: "#111" },
+  modeSub: { fontSize: 13, color: "#666", marginTop: 2 },
+  state: { fontSize: 15, fontWeight: "600", marginBottom: 8 },
   row: { flexDirection: "row", gap: 10 },
   btn: {
     flex: 1,
@@ -245,7 +292,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fafafa",
   },
   format: { marginTop: 10, fontSize: 14, fontWeight: "600", color: "#1b7a3d" },
-  logBox: { flex: 1, backgroundColor: "#0b1220", borderRadius: 10, marginBottom: 16 },
+  logBox: { minHeight: 140, backgroundColor: "#0b1220", borderRadius: 10, padding: 10, marginBottom: 24 },
   logHint: { color: "#8aa" },
   logLine: { color: "#cfe", fontFamily: "monospace", fontSize: 12, marginBottom: 2 },
 });
