@@ -114,17 +114,32 @@ export class NiimbotClient {
     void this.t.write(new NiimbotPacket(type, Uint8Array.from(data)).toBytes());
     return p;
   }
-  // Image-row write: prefer acknowledged (guaranteed delivery + flow control);
-  // fall back to no-response if the characteristic doesn't support it.
+  // Image rows are batched: many small row packets are concatenated and sent in
+  // one acknowledged write, which the transport splits into MTU-sized acked
+  // chunks. This keeps write-with-response reliability (unpaced no-response drops
+  // rows on this hardware) while cutting the round-trips from one-per-row to
+  // one-per-MTU-chunk — the difference between a slow and a fast dense print.
   private ackMode: "unknown" | "ack" | "noack" = "unknown";
-  private async write(type: number, data: number[]): Promise<void> {
+  private rowBuf: number[] = [];
+  private static readonly ROW_FLUSH_BYTES = 900; // ≈ a few MTU chunks
+
+  private queueRow(type: number, data: number[]): void {
     const bytes = new NiimbotPacket(type, Uint8Array.from(data)).toBytes();
+    for (let i = 0; i < bytes.length; i++) this.rowBuf.push(bytes[i]);
+  }
+
+  // Flush queued row packets as one reliable write (falls back to no-response
+  // only if the characteristic rejects write-with-response).
+  private async flushRows(): Promise<void> {
+    if (this.rowBuf.length === 0) return;
+    const bytes = Uint8Array.from(this.rowBuf);
+    this.rowBuf.length = 0;
     if (this.ackMode !== "noack") {
       try {
         await this.t.writeAck(bytes);
         if (this.ackMode === "unknown") {
           this.ackMode = "ack";
-          this.log("(rows: write-with-response)");
+          this.log("(rows: write-with-response, batched)");
         }
         return;
       } catch {
@@ -152,6 +167,7 @@ export class NiimbotClient {
   async printImage(img: Bitmap, density = 3, labelType = 1): Promise<void> {
     this.aborted = false;
     this.ackMode = "unknown";
+    this.rowBuf.length = 0;
     const bpr = Math.ceil(img.width / 8);
     const totalPages = 1;
 
@@ -190,19 +206,21 @@ export class NiimbotClient {
       }
 
       if (isVoid) {
-        await this.write(T.EMPTY_ROW, [...u16(y), repeat]);
+        this.queueRow(T.EMPTY_ROW, [...u16(y), repeat]);
       } else {
         const { total, parts } = countParts(row);
         if (total <= 6) {
-          await this.write(T.BITMAP_ROW_INDEXED, [...u16(y), ...parts, repeat, ...indexPixels(row)]);
+          this.queueRow(T.BITMAP_ROW_INDEXED, [...u16(y), ...parts, repeat, ...indexPixels(row)]);
         } else {
-          await this.write(T.BITMAP_ROW, [...u16(y), ...parts, repeat, ...row]);
+          this.queueRow(T.BITMAP_ROW, [...u16(y), ...parts, repeat, ...row]);
         }
       }
+      if (this.rowBuf.length >= NiimbotClient.ROW_FLUSH_BYTES) await this.flushRows();
       const prev = y;
       y += repeat;
       if (Math.floor(prev / 64) !== Math.floor(y / 64)) this.log(`row ${y}/${img.height}`);
     }
+    await this.flushRows(); // send any remaining rows before ending the page
     this.log(`sent ${img.height} rows`);
 
     await this.send(T.PAGE_END, [1]);

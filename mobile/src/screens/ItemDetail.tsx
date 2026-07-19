@@ -9,6 +9,10 @@ import { colors, radius, space, type as t } from "../theme";
 import { isWithMe } from "./cards";
 import { BoxPicker } from "./BoxPicker";
 import Scanner from "../Scanner";
+import { printers } from "../niimbot/connection";
+import { renderLabel } from "../niimbot/label";
+import { DEFAULT_TUNING, PrintTuning, loadTuning } from "../labelSettings";
+import { buzzErr, buzzOk } from "../haptics";
 
 type Props = NativeStackScreenProps<BrowseStackParamList, "ItemDetail">;
 
@@ -17,6 +21,40 @@ export default function ItemDetail({ route, navigation }: Props) {
   const [desc, setDesc] = useState(item.description);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
+
+  useEffect(() => {
+    loadTuning().then(setTuning);
+    void printers.reconnectRemembered();
+    return printers.subscribe(() => setItem((i) => ({ ...i })));
+  }, []);
+
+  // Reprint a label for this item's existing code (no new code minted).
+  async function reprint() {
+    const code = item.itemCode;
+    if (!code) return;
+    const p = printers.printerForKind("item");
+    if (!p) {
+      Alert.alert(
+        printers.connected ? "No printer for item labels" : "Printer not connected",
+        printers.connected
+          ? `No connected printer is set to print item labels. Assign one in Settings, or write ${code} by hand.`
+          : `Connect an item-label printer in Settings to print ${code}, or write it by hand.`,
+      );
+      return;
+    }
+    setPrinting(true);
+    try {
+      await p.client.printImage(renderLabel(code, p.labelSize, p.model.widthPx), tuning.density, tuning.labelType);
+      buzzOk();
+    } catch {
+      buzzErr();
+      Alert.alert("Print failed", `Couldn't print label ${code}. Try again, or write it by hand.`);
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: item.itemCode || "Item" });
@@ -122,6 +160,18 @@ export default function ItemDetail({ route, navigation }: Props) {
           <Badge label={item.destination} tone={isWithMe(item.destination) ? "accent" : "primary"} />
         ) : null}
       </View>
+
+      {item.itemCode ? (
+        <>
+          <View style={{ height: space.sm }} />
+          <SecondaryButton
+            title={printing ? "Printing…" : "Print label"}
+            icon="print-outline"
+            onPress={reprint}
+            disabled={printing || saving}
+          />
+        </>
+      ) : null}
 
       <FieldLabel text="Description / notes" />
       <TextField multiline value={desc} onChangeText={setDesc} placeholder="Describe the item, or add a note…" />

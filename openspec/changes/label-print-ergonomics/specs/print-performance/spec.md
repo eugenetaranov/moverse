@@ -2,17 +2,19 @@
 
 ### Requirement: Fast image-row streaming
 
-The image-row stream SHALL NOT be gated on a per-chunk acknowledged BLE write.
-Rows SHALL be sent with write-without-response, paced by a periodic flow-control /
-check-line sync (every N rows) rather than an acknowledgement on every chunk, so a
-dense full-label bitmap prints quickly. The change SHALL preserve print correctness:
-the setup sequence, per-third pixel counts, row-repeat cap, and end-of-page
-handshake are unchanged.
+The image-row stream SHALL minimize BLE round-trips so a dense full-label bitmap
+prints quickly. Rather than one acknowledged write (and its round-trip) per row
+packet, the implementation SHALL reduce round-trips — e.g. by batching multiple row
+packets into each acknowledged MTU-sized write, or by paced write-without-response
+with a periodic flow-control sync. The change SHALL preserve print correctness: the
+setup sequence, per-third pixel counts, row-repeat cap, and end-of-page handshake
+are unchanged, and no rows are dropped. (Plain unpaced write-without-response is
+known to drop rows on this hardware and MUST NOT be used without flow control.)
 
-#### Scenario: Test print is not gated per chunk
+#### Scenario: Dense print does not pay a round-trip per row
 
 - **WHEN** a dense test label is printed
-- **THEN** its rows stream without waiting for an acknowledgement on every chunk, and the label prints correctly
+- **THEN** its row packets are sent with far fewer BLE round-trips than one-per-row, and the label prints correctly with no dropped rows
 
 #### Scenario: Test print speed comparable to a normal print
 
