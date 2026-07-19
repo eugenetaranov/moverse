@@ -45,6 +45,7 @@ import {
 import { printer } from "../niimbot/connection";
 import { renderLabel } from "../niimbot/label";
 import { reserveCode, seedReservation } from "../reservation";
+import { Box, loadInventory } from "../inventory";
 import { colors, radius, space, type as t, HIT } from "../theme";
 import {
   PrimaryButton,
@@ -662,12 +663,57 @@ function SetBox({
   onCancel: () => void;
 }) {
   const [text, setText] = useState("");
+  const [boxes, setBoxes] = useState<Box[]>([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    loadInventory(false)
+      .then((inv) => setBoxes(inv.boxes))
+      .catch(() => {});
+  }, []);
   return (
-    <View style={styles.center}>
-      <Ionicons name="cube-outline" size={40} color={colors.primary} />
-      <Text style={styles.h2}>Which box?</Text>
-      <Text style={styles.bodyCenter}>Scan a BOX-… label, or type a name.</Text>
+    <ScrollView
+      style={styles.setBoxScreen}
+      contentContainerStyle={styles.setBoxContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={{ alignItems: "center" }}>
+        <Ionicons name="cube-outline" size={40} color={colors.primary} />
+        <Text style={styles.h2}>Which box?</Text>
+        <Text style={styles.bodyCenter}>Pick an existing box, scan a label, or type a name.</Text>
+      </View>
       <View style={{ height: space.lg }} />
+
+      <TouchableOpacity style={styles.dropdown} onPress={() => setOpen((o) => !o)} activeOpacity={0.8}>
+        <Ionicons name="albums-outline" size={18} color={colors.mutedFg} />
+        <Text style={styles.dropdownLabel}>
+          {boxes.length ? `Pick an existing box (${boxes.length})` : "No existing boxes yet"}
+        </Text>
+        {boxes.length ? (
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={18} color={colors.mutedFg} />
+        ) : null}
+      </TouchableOpacity>
+      {open && boxes.length ? (
+        <View style={styles.dropdownList}>
+          {boxes.map((b) => (
+            <TouchableOpacity
+              key={b.boxCode}
+              style={styles.dropdownItem}
+              onPress={() => onSet(b.boxCode)}
+              activeOpacity={0.7}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dropdownCode}>{b.boxCode}</Text>
+                {b.name ? <Text style={styles.dropdownName}>{b.name}</Text> : null}
+              </View>
+              <Text style={styles.dropdownCount}>
+                {b.itemCount} item{b.itemCount === 1 ? "" : "s"}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+
+      <Text style={styles.orText}>or type / scan a new one</Text>
       <TextField
         style={{ alignSelf: "stretch" }}
         value={text}
@@ -682,7 +728,7 @@ function SetBox({
       <SecondaryButton title="Scan a box label" icon="qr-code-outline" onPress={onScan} />
       <View style={{ height: space.sm }} />
       <SecondaryButton title="Cancel" onPress={onCancel} />
-    </View>
+    </ScrollView>
   );
 }
 
@@ -771,6 +817,40 @@ const styles = StyleSheet.create({
   aiRow: { flexDirection: "row", alignItems: "center", marginTop: space.sm },
   aiState: { ...t.caption, color: colors.mutedFg, flex: 1, marginLeft: space.md },
   bodyCenter: { ...t.body, color: colors.mutedFg, textAlign: "center" },
+  setBoxScreen: { flex: 1, backgroundColor: colors.bg },
+  setBoxContent: { padding: space.xl, paddingTop: 56, paddingBottom: space.xxl },
+  dropdown: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: HIT,
+    paddingHorizontal: space.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dropdownLabel: { ...t.bodyStrong, color: colors.fg, flex: 1 },
+  dropdownList: {
+    marginTop: space.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: HIT,
+    paddingHorizontal: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  dropdownCode: { ...t.bodyStrong, color: colors.fg },
+  dropdownName: { ...t.caption, color: colors.mutedFg },
+  dropdownCount: { ...t.caption, color: colors.mutedFg, fontWeight: "600" },
+  orText: { ...t.caption, color: colors.mutedFg, textAlign: "center", marginTop: space.lg, marginBottom: space.sm },
   printStatus: { ...t.bodyStrong, color: colors.mutedFg, marginTop: space.md, textAlign: "center" },
   fixedBtn: { minWidth: 136 },
   onCard: {
