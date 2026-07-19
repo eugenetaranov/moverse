@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Modal,
   PermissionsAndroid,
   Platform,
   ScrollView,
@@ -53,6 +54,7 @@ const MODES: { key: LabelingMode; icon: IconName; title: string; sub: string }[]
 
 export default function Settings() {
   const [lines, setLines] = useState<string[]>([]);
+  const [logOpen, setLogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [, force] = useState(0);
@@ -249,33 +251,53 @@ export default function Settings() {
         />
       </View>
 
-      {/* Log */}
-      <View style={styles.logHeader}>
-        <SectionHeader>Log</SectionHeader>
-        <TouchableOpacity
-          style={styles.copyBtn}
-          onPress={copyLog}
-          disabled={lines.length === 0}
-          hitSlop={8}
-          accessibilityLabel="Copy log"
-        >
-          <Ionicons name="copy-outline" size={16} color={colors.accent} />
-          <Text style={styles.copyText}>Copy</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.logBox}>
-        {lines.length === 0 ? (
-          <Text style={styles.logHint}>Connect, then Print test. Watch this log.</Text>
-        ) : (
-          lines.map((l, i) => (
-            <Text key={i} style={styles.logLine}>
-              {l}
-            </Text>
-          ))
-        )}
-      </View>
+      {/* Log lives in a modal so it doesn't clutter the screen */}
+      <View style={{ height: space.lg }} />
+      <TouchableOpacity
+        style={styles.logLink}
+        onPress={() => setLogOpen(true)}
+        accessibilityLabel="View printer log"
+      >
+        <Ionicons name="document-text-outline" size={16} color={colors.mutedFg} />
+        <Text style={styles.logLinkText}>View printer log{lines.length ? ` (${lines.length})` : ""}</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.mutedFg} />
+      </TouchableOpacity>
         </>
       )}
+
+      <Modal
+        visible={logOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setLogOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Printer log</Text>
+              <View style={styles.modalHeadActions}>
+                <TouchableOpacity onPress={copyLog} disabled={lines.length === 0} hitSlop={8}>
+                  <Ionicons name="copy-outline" size={20} color={colors.accent} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setLogOpen(false)} hitSlop={8}>
+                  <Ionicons name="close" size={22} color={colors.fg} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <ScrollView style={styles.logBox} contentContainerStyle={{ padding: space.md }}>
+              {lines.length === 0 ? (
+                <Text style={styles.logHint}>Connect, then Print test. Watch this log.</Text>
+              ) : (
+                lines.map((l, i) => (
+                  <Text key={i} style={styles.logLine}>
+                    {l}
+                  </Text>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -328,19 +350,39 @@ const styles = StyleSheet.create({
   format: { ...t.bodyStrong, color: colors.accent, marginLeft: space.sm },
   tuneBlock: { marginBottom: space.md },
   tuneLabel: { ...t.caption, color: colors.mutedFg, marginBottom: space.xs },
-  logHeader: {
+  logLink: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
+    alignItems: "center",
+    gap: space.sm,
+    minHeight: HIT,
+    paddingHorizontal: space.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  copyBtn: { flexDirection: "row", alignItems: "center", marginBottom: space.sm },
-  copyText: { color: colors.accent, fontWeight: "700", fontSize: 13, marginLeft: 4 },
+  logLinkText: { ...t.bodyStrong, color: colors.fg, flex: 1 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.5)", justifyContent: "flex-end" },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    paddingTop: space.md,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.xl,
+    maxHeight: "80%",
+  },
+  modalHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: space.sm,
+  },
+  modalTitle: { ...t.h2, color: colors.fg },
+  modalHeadActions: { flexDirection: "row", alignItems: "center", gap: space.lg },
   logBox: {
-    minHeight: 140,
     backgroundColor: "#0F172A",
     borderRadius: radius.md,
-    padding: space.md,
-    marginBottom: space.xxl,
   },
   logHint: { color: "#94A3B8" },
   logLine: { color: "#BAE6FD", fontFamily: "monospace", fontSize: 12, marginBottom: 2 },
