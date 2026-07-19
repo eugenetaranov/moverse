@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { printer } from "./niimbot/connection";
 import { makeTestImage } from "./niimbot/testImage";
 import {
@@ -123,6 +124,11 @@ export default function Settings({ onClose }: { onClose: () => void }) {
     setBusy(false);
   }
 
+  async function copyLog() {
+    await Clipboard.setStringAsync(lines.join("\n"));
+    log("(log copied to clipboard)");
+  }
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ padding: space.lg, paddingTop: 56 }}>
       <View style={styles.headerRow}>
@@ -204,7 +210,19 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       </View>
 
       {/* Log */}
-      <Text style={styles.section}>Log</Text>
+      <View style={styles.logHeader}>
+        <Text style={styles.section}>Log</Text>
+        <TouchableOpacity
+          style={styles.copyBtn}
+          onPress={copyLog}
+          disabled={lines.length === 0}
+          hitSlop={8}
+          accessibilityLabel="Copy log"
+        >
+          <Ionicons name="copy-outline" size={16} color={colors.accent} />
+          <Text style={styles.copyText}>Copy</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.logBox}>
         {lines.length === 0 ? (
           <Text style={styles.logHint}>Connect, then Print test. Watch this log.</Text>
@@ -345,6 +363,13 @@ const styles = StyleSheet.create({
   },
   formatRow: { flexDirection: "row", alignItems: "center", marginTop: space.md },
   format: { ...t.bodyStrong, color: colors.accent, marginLeft: space.sm },
+  logHeader: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  copyBtn: { flexDirection: "row", alignItems: "center", marginBottom: space.sm },
+  copyText: { color: colors.accent, fontWeight: "700", fontSize: 13, marginLeft: 4 },
   logBox: {
     minHeight: 140,
     backgroundColor: "#0F172A",
