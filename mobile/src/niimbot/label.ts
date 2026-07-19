@@ -4,41 +4,50 @@ import { drawText, textWidth, GLYPH_H } from "./font";
 import { LabelSize, labelPx, fitsQr } from "../labelSettings";
 
 // Render an item code to a 1bpp label bitmap sized to the label.
-//  - Text is the priority: the code fills the label width, large and readable.
-//  - Big enough labels (fitsQr) also get a QR *below* the text, sized to fit the
-//    width (never overflowing — the old layout scaled the QR to the height and
-//    clipped it on tall narrow labels).
-//  - Small labels are text-only.
+//  - The code runs along the label's LONGER side so the font is as large as
+//    possible: we lay everything out on a "logical" canvas whose long axis is
+//    horizontal, then rotate 90° into the physical bitmap when the label is
+//    taller than it is wide (narrow tape like the D110).
+//  - Text is the priority and fills the long axis, large and readable.
+//  - Big enough labels (fitsQr) also get a QR below the code; small labels are
+//    text-only.
 export function renderLabel(code: string, size: LabelSize, maxWidthPx?: number): Bitmap {
   const { widthPx, heightPx } = labelPx(size, maxWidthPx);
   const bytesPerRow = Math.ceil(widthPx / 8);
   const data = new Uint8Array(bytesPerRow * heightPx);
-  const set = (x: number, y: number) => {
+  const setPhys = (x: number, y: number) => {
     if (x < 0 || y < 0 || x >= widthPx || y >= heightPx) return;
     data[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7);
   };
-  const margin = Math.max(4, Math.round(Math.min(widthPx, heightPx) * 0.06));
-  const tw = textWidth(code); // unscaled px
 
-  // Largest integer scale that fits the code across the width.
-  const textFillW = Math.max(1, Math.floor((widthPx - margin * 2) / tw));
+  // Logical canvas: long axis horizontal. Rotate 90° CW into the physical bitmap
+  // when the label is portrait (taller than wide) so the code reads along the length.
+  const portrait = heightPx > widthPx;
+  const LW = portrait ? heightPx : widthPx; // logical width (the long side)
+  const LH = portrait ? widthPx : heightPx; // logical height (the short side)
+  const set = portrait ? (x: number, y: number) => setPhys(widthPx - 1 - y, x) : setPhys;
+
+  const margin = Math.max(4, Math.round(Math.min(LW, LH) * 0.06));
+  const tw = textWidth(code); // unscaled px
+  // Largest integer scale that fits the code across the long axis.
+  const textFillW = Math.max(1, Math.floor((LW - margin * 2) / tw));
 
   if (fitsQr(size)) {
-    // Text band on top (cap its height so the QR has room), QR centred below.
-    const textScale = Math.max(1, Math.min(textFillW, Math.floor((heightPx * 0.3) / GLYPH_H)));
+    // Big code band on top, QR centred below — both within the short axis (LH).
+    const textScale = Math.max(1, Math.min(textFillW, Math.floor((LH * 0.42) / GLYPH_H)));
     const textH = GLYPH_H * textScale;
-    drawText(set, code, Math.floor((widthPx - tw * textScale) / 2), margin, textScale);
+    drawText(set, code, Math.floor((LW - tw * textScale) / 2), margin, textScale);
 
     const qr = qrcode(0, "M");
     qr.addData(code);
     qr.make();
     const n = qr.getModuleCount();
     const qrTop = margin + textH + margin;
-    const availW = widthPx - margin * 2;
-    const availH = heightPx - qrTop - margin;
+    const availW = LW - margin * 2;
+    const availH = LH - qrTop - margin;
     const scale = Math.max(1, Math.floor(Math.min(availW, availH) / n));
     const qrSize = n * scale;
-    const qx = Math.floor((widthPx - qrSize) / 2);
+    const qx = Math.floor((LW - qrSize) / 2);
     const qy = qrTop + Math.max(0, Math.floor((availH - qrSize) / 2));
     for (let r = 0; r < n; r++)
       for (let col = 0; col < n; col++)
@@ -47,13 +56,13 @@ export function renderLabel(code: string, size: LabelSize, maxWidthPx?: number):
             for (let dx = 0; dx < scale; dx++) set(qx + col * scale + dx, qy + r * scale + dy);
         }
   } else {
-    // Text only, centred, as large as fits both dimensions.
-    const s = Math.max(1, Math.min(textFillW, Math.floor((heightPx - margin * 2) / GLYPH_H)));
+    // Text only, centred, as large as fits along the long axis and short axis.
+    const s = Math.max(1, Math.min(textFillW, Math.floor((LH - margin * 2) / GLYPH_H)));
     drawText(
       set,
       code,
-      Math.floor((widthPx - tw * s) / 2),
-      Math.floor((heightPx - GLYPH_H * s) / 2),
+      Math.floor((LW - tw * s) / 2),
+      Math.floor((LH - GLYPH_H * s) / 2),
       s,
     );
   }
