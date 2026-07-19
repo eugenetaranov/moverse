@@ -21,6 +21,9 @@ import {
   saveLabelSize,
 } from "./labelSettings";
 import { LabelingMode, loadMode, saveMode } from "./labelingMode";
+import { colors, radius, space, type as t, HIT } from "./theme";
+
+type IconName = keyof typeof Ionicons.glyphMap;
 
 async function requestBlePermissions(): Promise<boolean> {
   if (Platform.OS !== "android") return true;
@@ -37,10 +40,10 @@ async function requestBlePermissions(): Promise<boolean> {
   return Object.values(res).every((v) => v === PermissionsAndroid.RESULTS.GRANTED);
 }
 
-const MODES: { key: LabelingMode; title: string; sub: string }[] = [
-  { key: "scan", title: "Scan pre-made labels", sub: "Printed sheets / rolls — scan each" },
-  { key: "assign", title: "App assigns codes", sub: "Print or hand-write the next code" },
-  { key: "none", title: "No codes", sub: "Just name a box, photograph items" },
+const MODES: { key: LabelingMode; icon: IconName; title: string; sub: string }[] = [
+  { key: "scan", icon: "qr-code-outline", title: "Scan pre-made labels", sub: "Printed sheets / rolls — scan each" },
+  { key: "assign", icon: "print-outline", title: "App assigns codes", sub: "Print or hand-write the next code" },
+  { key: "none", icon: "camera-outline", title: "No codes", sub: "Just name a box, photograph items" },
 ];
 
 export default function Settings({ onClose }: { onClose: () => void }) {
@@ -109,9 +112,6 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       setBusy(false);
     }
   }
-
-  // Force-stop a stuck print: ask the loop to abort, then disconnect (which
-  // rejects any hung BLE write so we never get stuck with greyed buttons).
   async function cancelPrint() {
     printer.client?.cancel();
     log("cancelling…");
@@ -123,13 +123,11 @@ export default function Settings({ onClose }: { onClose: () => void }) {
     setBusy(false);
   }
 
-  const assign = mode === "assign";
-
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ padding: 16, paddingTop: 56 }}>
+    <ScrollView style={styles.screen} contentContainerStyle={{ padding: space.lg, paddingTop: 56 }}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Settings</Text>
-        <TouchableOpacity onPress={onClose} hitSlop={10}>
+        <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Done">
           <Text style={styles.close}>Done</Text>
         </TouchableOpacity>
       </View>
@@ -143,42 +141,49 @@ export default function Settings({ onClose }: { onClose: () => void }) {
             key={m.key}
             style={[styles.modeCard, on && styles.modeCardOn]}
             onPress={() => pickMode(m.key)}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: on }}
           >
-            <Ionicons
-              name={on ? "radio-button-on" : "radio-button-off"}
-              size={22}
-              color={on ? "#111" : "#999"}
-            />
-            <View style={{ marginLeft: 10, flex: 1 }}>
+            <View style={[styles.modeIcon, on && styles.modeIconOn]}>
+              <Ionicons name={m.icon} size={22} color={on ? colors.onPrimary : colors.mutedFg} />
+            </View>
+            <View style={{ marginLeft: space.md, flex: 1 }}>
               <Text style={styles.modeTitle}>{m.title}</Text>
               <Text style={styles.modeSub}>{m.sub}</Text>
             </View>
+            <Ionicons
+              name={on ? "checkmark-circle" : "ellipse-outline"}
+              size={22}
+              color={on ? colors.accent : colors.border}
+            />
           </TouchableOpacity>
         );
       })}
 
-      {/* Printer — relevant to the assign branch */}
+      {/* Printer */}
       <Text style={styles.section}>Printer (NIIMBOT B1)</Text>
-      <Text style={styles.state}>
-        {printer.connected ? `● Connected: ${printer.name}` : "○ Not connected"}
-      </Text>
-      {!assign ? (
-        <Text style={styles.hint}>
-          Used when “App assigns codes” is selected — connect to print a label per item.
+      <View style={styles.stateRow}>
+        <Ionicons
+          name={printer.connected ? "bluetooth" : "bluetooth-outline"}
+          size={18}
+          color={printer.connected ? colors.accent : colors.mutedFg}
+        />
+        <Text style={styles.state}>
+          {printer.connected ? `Connected: ${printer.name}` : "Not connected"}
         </Text>
-      ) : null}
+      </View>
       <View style={styles.row}>
         {printer.connected ? (
           <Btn title="Disconnect" onPress={disconnect} disabled={busy} />
         ) : (
-          <Btn title="Connect" onPress={connect} disabled={busy} />
+          <Btn title="Connect" icon="bluetooth" tone="accent" onPress={connect} disabled={busy} />
         )}
-        <Btn title="Print test label" onPress={printTest} disabled={busy || !printer.connected} />
+        <Btn title="Print test" icon="print-outline" onPress={printTest} disabled={busy || !printer.connected} />
       </View>
       {busy ? (
-        <View style={[styles.row, { marginTop: 8 }]}>
-          <Btn title="Cancel" onPress={cancelPrint} />
+        <View style={[styles.row, { marginTop: space.sm }]}>
+          <Btn title="Cancel" tone="danger" onPress={cancelPrint} />
         </View>
       ) : null}
 
@@ -189,13 +194,20 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         <Field label="Width" value={label.widthMm} onChange={(n) => updateLabel({ widthMm: n })} />
         <Field label="Height" value={label.heightMm} onChange={(n) => updateLabel({ heightMm: n })} />
       </View>
-      <Text style={styles.format}>Format: {fitsQr(label) ? "QR code + text" : "text only"}</Text>
+      <View style={styles.formatRow}>
+        <Ionicons
+          name={fitsQr(label) ? "qr-code-outline" : "text-outline"}
+          size={16}
+          color={colors.accent}
+        />
+        <Text style={styles.format}>{fitsQr(label) ? "QR code + text" : "Text only"}</Text>
+      </View>
 
       {/* Log */}
       <Text style={styles.section}>Log</Text>
       <View style={styles.logBox}>
         {lines.length === 0 ? (
-          <Text style={styles.logHint}>Connect, then Print test label. Watch this log.</Text>
+          <Text style={styles.logHint}>Connect, then Print test. Watch this log.</Text>
         ) : (
           lines.map((l, i) => (
             <Text key={i} style={styles.logLine}>
@@ -208,20 +220,37 @@ export default function Settings({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Btn({ title, onPress, disabled }: { title: string; onPress: () => void; disabled?: boolean }) {
+function Btn({
+  title,
+  onPress,
+  disabled,
+  icon,
+  tone = "primary",
+}: {
+  title: string;
+  onPress: () => void;
+  disabled?: boolean;
+  icon?: IconName;
+  tone?: "primary" | "accent" | "danger";
+}) {
+  const bg = tone === "accent" ? colors.accent : tone === "danger" ? colors.destructive : colors.primary;
   return (
     <TouchableOpacity
-      style={[styles.btn, disabled && { opacity: 0.4 }]}
+      style={[styles.btn, { backgroundColor: bg }, disabled && { opacity: 0.4 }]}
       onPress={onPress}
       disabled={disabled}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={title}
     >
+      {icon ? <Ionicons name={icon} size={18} color={colors.onPrimary} style={{ marginRight: 6 }} /> : null}
       <Text style={styles.btnText}>{title}</Text>
     </TouchableOpacity>
   );
 }
 
-// Free-edit numeric field: keeps a local string so the value can be cleared and
-// retyped; commits a clamped number on blur.
+// Free-edit numeric field: local string so the value can be cleared/retyped;
+// commits a clamped number on blur.
 function Field({
   label,
   value,
@@ -244,7 +273,7 @@ function Field({
         keyboardType="number-pad"
         value={text}
         onFocus={() => (editing.current = true)}
-        onChangeText={(t) => setText(t.replace(/[^0-9]/g, ""))}
+        onChangeText={(v) => setText(v.replace(/[^0-9]/g, ""))}
         onBlur={() => {
           editing.current = false;
           const n = Math.min(120, Math.max(5, parseInt(text || "0", 10) || 0));
@@ -257,61 +286,72 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#fff" },
+  screen: { flex: 1, backgroundColor: colors.bg },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: space.sm,
   },
-  title: { fontSize: 24, fontWeight: "800" },
-  close: { fontSize: 16, fontWeight: "700", color: "#111" },
-  section: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#555",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginTop: 22,
-    marginBottom: 8,
-  },
+  title: { ...t.display, color: colors.fg },
+  close: { fontSize: 16, fontWeight: "700", color: colors.accent },
+  section: { ...t.label, color: colors.mutedFg, marginTop: space.xl, marginBottom: space.sm },
   modeCard: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: space.md,
+    marginBottom: space.sm,
   },
-  modeCardOn: { borderColor: "#111", backgroundColor: "#f5f5f5" },
-  modeTitle: { fontSize: 15, fontWeight: "700", color: "#111" },
-  modeSub: { fontSize: 13, color: "#666", marginTop: 2 },
-  state: { fontSize: 15, fontWeight: "600", marginBottom: 8 },
-  row: { flexDirection: "row", gap: 10 },
-  btn: {
-    flex: 1,
-    backgroundColor: "#111",
-    minHeight: 48,
-    borderRadius: 10,
+  modeCardOn: { borderColor: colors.primary, backgroundColor: "#F1F5F9" },
+  modeIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    backgroundColor: colors.muted,
     alignItems: "center",
     justifyContent: "center",
   },
-  btnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  hint: { color: "#666", fontSize: 13, marginBottom: 10 },
+  modeIconOn: { backgroundColor: colors.primary },
+  modeTitle: { ...t.bodyStrong, color: colors.fg },
+  modeSub: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
+  stateRow: { flexDirection: "row", alignItems: "center", marginBottom: space.md },
+  state: { ...t.bodyStrong, color: colors.fg, marginLeft: space.sm },
+  row: { flexDirection: "row", gap: space.md },
+  btn: {
+    flex: 1,
+    flexDirection: "row",
+    minHeight: HIT,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnText: { color: colors.onPrimary, fontSize: 15, fontWeight: "700" },
+  hint: { ...t.caption, color: colors.mutedFg, marginBottom: space.md },
   field: { flex: 1 },
-  fieldLabel: { fontSize: 12, color: "#666", marginBottom: 4 },
+  fieldLabel: { ...t.caption, color: colors.mutedFg, marginBottom: space.xs },
   input: {
     borderWidth: 1,
-    borderColor: "#bbb",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    minHeight: 48,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    minHeight: HIT,
     fontSize: 16,
-    backgroundColor: "#fafafa",
+    color: colors.fg,
+    backgroundColor: colors.surface,
   },
-  format: { marginTop: 10, fontSize: 14, fontWeight: "600", color: "#1b7a3d" },
-  logBox: { minHeight: 140, backgroundColor: "#0b1220", borderRadius: 10, padding: 10, marginBottom: 24 },
-  logHint: { color: "#8aa" },
-  logLine: { color: "#cfe", fontFamily: "monospace", fontSize: 12, marginBottom: 2 },
+  formatRow: { flexDirection: "row", alignItems: "center", marginTop: space.md },
+  format: { ...t.bodyStrong, color: colors.accent, marginLeft: space.sm },
+  logBox: {
+    minHeight: 140,
+    backgroundColor: "#0F172A",
+    borderRadius: radius.md,
+    padding: space.md,
+    marginBottom: space.xxl,
+  },
+  logHint: { color: "#94A3B8" },
+  logLine: { color: "#BAE6FD", fontFamily: "monospace", fontSize: 12, marginBottom: 2 },
 });

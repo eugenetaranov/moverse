@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { CameraView } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
 import { classify, LabelKind } from "./labels";
 import { buzzOk, buzzErr } from "./haptics";
 
@@ -47,8 +48,9 @@ export default function Scanner({ expect, prompt, onScan, onReject, onCancel }: 
         onBarcodeScanned={({ data }) => handleBarcode(data)}
       />
       <View style={styles.topBar} pointerEvents="box-none">
-        <TouchableOpacity style={styles.chip} onPress={onCancel}>
-          <Text style={styles.chipText}>✕ Cancel</Text>
+        <TouchableOpacity style={styles.chip} onPress={onCancel} accessibilityLabel="Cancel">
+          <Ionicons name="close" size={18} color="#fff" />
+          <Text style={styles.chipText}>Cancel</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.overlay} pointerEvents="none">
@@ -63,13 +65,16 @@ const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: "#000" },
   topBar: { position: "absolute", top: 44, left: 0, right: 0, paddingHorizontal: 16 },
   chip: {
+    flexDirection: "row",
+    alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    paddingVertical: 12,
+    backgroundColor: "rgba(15,23,42,0.6)",
+    minHeight: 44,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 24,
+    borderRadius: 999,
   },
-  chipText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  chipText: { color: "#fff", fontSize: 15, fontWeight: "600", marginLeft: 6 },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",

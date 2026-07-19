@@ -32,6 +32,9 @@ import { DEFAULT_LABEL, LabelSize, loadLabelSize } from "./src/labelSettings";
 import { printer } from "./src/niimbot/connection";
 import { renderLabel } from "./src/niimbot/label";
 import { reserveCode, seedReservation } from "./src/reservation";
+import { colors, radius, space, type as t, HIT } from "./src/theme";
+
+type IconName = keyof typeof Ionicons.glyphMap;
 
 interface Draft {
   itemCode: string;
@@ -69,7 +72,6 @@ export default function App() {
     void seedReservation();
     return printer.subscribe(() => force((n) => n + 1));
   }, []);
-  // Re-read mode/label when returning from Settings.
   useEffect(() => {
     if (screen === "home") {
       loadMode().then(setModeState);
@@ -124,7 +126,6 @@ export default function App() {
     }
   }
 
-  // Start adding an item — behaviour depends on the labeling mode.
   async function startAdd() {
     if (mode === "scan") {
       setScreen("capture");
@@ -134,8 +135,6 @@ export default function App() {
       setScreen("photo");
       return;
     }
-    // assign: reserve a code, print it (if a printer is connected) or show it to
-    // hand-write, then go to the photo.
     setBusy(true);
     try {
       const code = await reserveCode();
@@ -177,8 +176,8 @@ export default function App() {
         res.action === "exists"
           ? `${shown} already in ${box}`
           : res.action === "added"
-            ? `Added ${shown} → ${box} ✓`
-            : `Saved ${shown} → ${box} ✓`,
+            ? `Added ${shown} → ${box}`
+            : `Saved ${shown} → ${box}`,
       );
       if (res.action !== "exists") setCount((c) => c + 1);
       setDraft({ ...EMPTY, boxCode: draft.boxCode });
@@ -192,14 +191,13 @@ export default function App() {
   }
 
   // ---- onboarding / permission gates ----
-  if (onboarded === null) {
+  if (onboarded === null)
     return (
       <Center>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.primary} />
       </Center>
     );
-  }
-  if (!onboarded) {
+  if (!onboarded)
     return (
       <Onboarding
         onPick={(m) => {
@@ -210,25 +208,24 @@ export default function App() {
         }}
       />
     );
-  }
-  if (!permission) {
+  if (!permission)
     return (
       <Center>
-        <ActivityIndicator />
+        <ActivityIndicator color={colors.primary} />
       </Center>
     );
-  }
-  if (!permission.granted) {
+  if (!permission.granted)
     return (
       <Center>
-        <Text style={styles.body}>
+        <Ionicons name="camera-outline" size={44} color={colors.mutedFg} />
+        <View style={{ height: space.md }} />
+        <Text style={styles.bodyCenter}>
           Moverse needs camera access to scan labels and photograph items.
         </Text>
-        <View style={{ height: 12 }} />
-        <PrimaryButton title="Grant camera access" onPress={requestPermission} />
+        <View style={{ height: space.lg }} />
+        <PrimaryButton title="Grant camera access" onPress={requestPermission} icon="camera" />
       </Center>
     );
-  }
 
   // ---- full-screen surfaces ----
   if (screen === "settings") return <Settings onClose={() => setScreen("home")} />;
@@ -268,21 +265,30 @@ export default function App() {
     );
   if (screen === "setBox")
     return (
-      <SetBox
-        onSet={applyBox}
-        onScan={() => setScreen("scanBox")}
-        onCancel={() => setScreen("home")}
-      />
+      <SetBox onSet={applyBox} onScan={() => setScreen("scanBox")} onCancel={() => setScreen("home")} />
     );
   if (screen === "writeCode")
     return (
       <Center>
+        <Ionicons name="create-outline" size={40} color={colors.primary} />
         <Text style={styles.h2}>Write this on the item</Text>
         <Text style={styles.bigCode}>{draft.itemCode}</Text>
-        <View style={{ height: 20 }} />
-        <PrimaryButton title="Done — take photo ▶" onPress={() => setScreen("photo")} style={{ alignSelf: "stretch" }} />
-        <View style={{ height: 10 }} />
-        <SecondaryButton title="Cancel" onPress={() => { edit({ itemCode: "" }); setScreen("home"); }} />
+        <View style={{ height: space.xl }} />
+        <PrimaryButton
+          title="Done — take photo"
+          icon="arrow-forward"
+          accent
+          onPress={() => setScreen("photo")}
+          style={{ alignSelf: "stretch" }}
+        />
+        <View style={{ height: space.sm }} />
+        <SecondaryButton
+          title="Cancel"
+          onPress={() => {
+            edit({ itemCode: "" });
+            setScreen("home");
+          }}
+        />
       </Center>
     );
 
@@ -299,19 +305,27 @@ export default function App() {
     <View style={styles.screen}>
       <View style={styles.header}>
         <Text style={styles.appName}>Moverse</Text>
-        <TouchableOpacity onPress={() => setScreen("settings")} hitSlop={12}>
-          <Ionicons name="settings-outline" size={24} color="#333" />
+        <TouchableOpacity
+          onPress={() => setScreen("settings")}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Settings"
+        >
+          <Ionicons name="settings-outline" size={24} color={colors.mutedFg} />
         </TouchableOpacity>
       </View>
 
       <TouchableOpacity
         style={[styles.banner, boxOk ? styles.bannerOk : styles.bannerWarn]}
         onPress={() => setScreen("setBox")}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
       >
-        <Text style={styles.bannerText}>
-          {boxOk ? `📦 Packing into ${draft.boxCode.trim()}` : "📦 No box — tap to set"}
-        </Text>
+        <View style={styles.bannerLeft}>
+          <Ionicons name="cube-outline" size={20} color={colors.onPrimary} />
+          <Text style={styles.bannerText} numberOfLines={1}>
+            {boxOk ? `Packing into ${draft.boxCode.trim()}` : "No box — tap to set"}
+          </Text>
+        </View>
         <Text style={styles.bannerAction}>{boxOk ? "Change" : "Set"}</Text>
       </TouchableOpacity>
       <Text style={[styles.status, toast ? styles.statusToast : styles.statusIdle]}>
@@ -325,12 +339,13 @@ export default function App() {
             <Image source={{ uri: draft.photoUri }} style={styles.thumb} />
           ) : (
             <View style={[styles.thumb, styles.thumbEmpty]}>
-              <Text style={styles.thumbEmptyText}>No photo</Text>
+              <Ionicons name="image-outline" size={26} color={colors.mutedFg} />
             </View>
           )}
           <View style={styles.rightCol}>
             <SecondaryButton
               title={draft.photoUri ? "Retake" : "Take photo"}
+              icon="camera-outline"
               onPress={() => setScreen("photo")}
               style={styles.fixedBtn}
             />
@@ -342,7 +357,8 @@ export default function App() {
             <FieldLabel text="Item code" done={itemOk} />
             {mode === "assign" ? (
               <View style={styles.chip}>
-                <Text style={styles.chipText}>{draft.itemCode || "— assigned when you add"}</Text>
+                <Ionicons name="pricetag-outline" size={16} color={colors.mutedFg} />
+                <Text style={styles.chipText}>{draft.itemCode || "assigned when you add"}</Text>
               </View>
             ) : (
               <>
@@ -350,13 +366,19 @@ export default function App() {
                   <TextInput
                     style={[styles.input, styles.flex, itemBad && styles.inputBad]}
                     value={draft.itemCode}
-                    onChangeText={(t) => edit({ itemCode: t })}
+                    onChangeText={(v) => edit({ itemCode: v })}
                     placeholder={`${ITEM_PREFIX}0001`}
+                    placeholderTextColor={colors.mutedFg}
                     autoCapitalize="characters"
                     autoCorrect={false}
                   />
-                  <View style={{ width: 8 }} />
-                  <SecondaryButton title="Scan" onPress={() => setScreen("scanItem")} style={styles.fixedBtn} />
+                  <View style={{ width: space.sm }} />
+                  <SecondaryButton
+                    title="Scan"
+                    icon="qr-code-outline"
+                    onPress={() => setScreen("scanItem")}
+                    style={styles.fixedBtn}
+                  />
                 </View>
                 {itemBad ? <Text style={styles.warn}>Expected an {ITEM_PREFIX} code</Text> : null}
               </>
@@ -368,13 +390,15 @@ export default function App() {
         <TextInput
           style={[styles.input, styles.multiline]}
           value={draft.description}
-          onChangeText={(t) => edit({ description: t })}
+          onChangeText={(v) => edit({ description: v })}
           placeholder="Describe the item, or add a note…"
+          placeholderTextColor={colors.mutedFg}
           multiline
         />
         <View style={styles.aiRow}>
           <SecondaryButton
-            title="✨ Auto-describe"
+            title="Auto-describe"
+            icon="sparkles-outline"
             onPress={() => autoDescribe(draft.photoBase64)}
             disabled={!draft.photoBase64 || describeState === "loading"}
           />
@@ -393,7 +417,8 @@ export default function App() {
       <View style={styles.actionBar}>
         {draftEmpty ? (
           <PrimaryButton
-            title={busy ? "…" : "＋ Add item"}
+            title={busy ? "Working…" : "Add item"}
+            icon="add"
             onPress={startAdd}
             disabled={busy || !boxOk}
             style={styles.flex}
@@ -401,6 +426,8 @@ export default function App() {
         ) : (
           <PrimaryButton
             title={saving ? "Saving…" : boxOk ? `Save → ${draft.boxCode.trim()}` : "Save"}
+            icon="checkmark"
+            accent
             onPress={doSave}
             disabled={!canSave}
             style={styles.flex}
@@ -413,7 +440,7 @@ export default function App() {
 }
 
 function Onboarding({ onPick }: { onPick: (m: LabelingMode) => void }) {
-  const cards: { m: LabelingMode; icon: keyof typeof Ionicons.glyphMap; title: string; sub: string }[] = [
+  const cards: { m: LabelingMode; icon: IconName; title: string; sub: string }[] = [
     { m: "assign", icon: "print-outline", title: "I have a label printer", sub: "The app assigns & prints a code per item (or shows it to hand-write)." },
     { m: "scan", icon: "qr-code-outline", title: "Pre-printed sticker sheets", sub: "You stick labels, then scan each one while packing." },
     { m: "none", icon: "camera-outline", title: "Neither — just name boxes", sub: "Name a box and photograph items. No codes." },
@@ -421,15 +448,18 @@ function Onboarding({ onPick }: { onPick: (m: LabelingMode) => void }) {
   return (
     <View style={styles.center}>
       <Text style={styles.h1}>How do you label items?</Text>
-      <Text style={styles.body}>You can change this anytime in Settings.</Text>
-      <View style={{ height: 16 }} />
+      <Text style={styles.bodyCenter}>You can change this anytime in Settings.</Text>
+      <View style={{ height: space.lg }} />
       {cards.map((c) => (
         <TouchableOpacity key={c.m} style={styles.onCard} onPress={() => onPick(c.m)} activeOpacity={0.85}>
-          <Ionicons name={c.icon} size={28} color="#111" />
-          <View style={{ marginLeft: 14, flex: 1 }}>
+          <View style={styles.onIcon}>
+            <Ionicons name={c.icon} size={24} color={colors.primary} />
+          </View>
+          <View style={{ marginLeft: space.md, flex: 1 }}>
             <Text style={styles.onTitle}>{c.title}</Text>
             <Text style={styles.onSub}>{c.sub}</Text>
           </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.mutedFg} />
         </TouchableOpacity>
       ))}
     </View>
@@ -448,27 +478,24 @@ function SetBox({
   const [text, setText] = useState("");
   return (
     <View style={styles.center}>
+      <Ionicons name="cube-outline" size={40} color={colors.primary} />
       <Text style={styles.h2}>Which box?</Text>
-      <Text style={styles.body}>Scan a BOX-… label, or type a name.</Text>
-      <View style={{ height: 16 }} />
+      <Text style={styles.bodyCenter}>Scan a BOX-… label, or type a name.</Text>
+      <View style={{ height: space.lg }} />
       <TextInput
         style={[styles.input, { alignSelf: "stretch" }]}
         value={text}
         onChangeText={setText}
         placeholder="e.g. BOX-0007 or Kitchen"
+        placeholderTextColor={colors.mutedFg}
         autoCapitalize="characters"
         autoCorrect={false}
       />
-      <View style={{ height: 12 }} />
-      <PrimaryButton
-        title="Set box"
-        onPress={() => onSet(text)}
-        disabled={text.trim() === ""}
-        style={{ alignSelf: "stretch" }}
-      />
-      <View style={{ height: 10 }} />
-      <SecondaryButton title="Scan a box label" onPress={onScan} />
-      <View style={{ height: 10 }} />
+      <View style={{ height: space.md }} />
+      <PrimaryButton title="Set box" onPress={() => onSet(text)} disabled={text.trim() === ""} style={{ alignSelf: "stretch" }} />
+      <View style={{ height: space.sm }} />
+      <SecondaryButton title="Scan a box label" icon="qr-code-outline" onPress={onScan} />
+      <View style={{ height: space.sm }} />
       <SecondaryButton title="Cancel" onPress={onCancel} />
     </View>
   );
@@ -479,10 +506,10 @@ function Center({ children }: { children: React.ReactNode }) {
 }
 function FieldLabel({ text, done }: { text: string; done: boolean }) {
   return (
-    <Text style={styles.fieldLabel}>
-      {text}
-      {done ? "  ✓" : ""}
-    </Text>
+    <View style={styles.fieldLabelRow}>
+      <Text style={styles.fieldLabel}>{text}</Text>
+      {done ? <Ionicons name="checkmark-circle" size={16} color={colors.accent} style={{ marginLeft: 6 }} /> : null}
+    </View>
   );
 }
 function PrimaryButton({
@@ -490,18 +517,26 @@ function PrimaryButton({
   onPress,
   disabled,
   style,
+  icon,
+  accent,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   style?: object;
+  icon?: IconName;
+  accent?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={[styles.primaryBtn, disabled && styles.btnDisabled, style]}
+      style={[styles.primaryBtn, accent && styles.accentBtn, disabled && styles.btnDisabled, style]}
       onPress={onPress}
       disabled={disabled}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={title}
     >
+      {icon ? <Ionicons name={icon} size={20} color={colors.onPrimary} style={{ marginRight: 8 }} /> : null}
       <Text style={styles.primaryBtnText}>{title}</Text>
     </TouchableOpacity>
   );
@@ -511,141 +546,153 @@ function SecondaryButton({
   onPress,
   disabled,
   style,
+  icon,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   style?: object;
+  icon?: IconName;
 }) {
   return (
     <TouchableOpacity
       style={[styles.secondaryBtn, disabled && styles.btnDisabled, style]}
       onPress={onPress}
       disabled={disabled}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={title}
     >
+      {icon ? <Ionicons name={icon} size={18} color={colors.fg} style={{ marginRight: 6 }} /> : null}
       <Text style={styles.secondaryBtnText}>{title}</Text>
     </TouchableOpacity>
   );
 }
 
-const MIN_TAP = 48;
-
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#fff", paddingTop: 44 },
+  screen: { flex: 1, backgroundColor: colors.bg, paddingTop: 44 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
   },
-  appName: { fontSize: 20, fontWeight: "800", color: "#111" },
+  appName: { ...t.h2, color: colors.fg },
   center: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    backgroundColor: "#fff",
+    padding: space.xl,
+    backgroundColor: colors.bg,
   },
-  h1: { fontSize: 24, fontWeight: "800", textAlign: "center", marginBottom: 6 },
-  h2: { fontSize: 22, fontWeight: "700", textAlign: "center", marginVertical: 8 },
-  bigCode: { fontSize: 40, fontWeight: "900", letterSpacing: 2, color: "#111" },
+  h1: { ...t.h1, color: colors.fg, textAlign: "center", marginBottom: space.xs },
+  h2: { ...t.h2, color: colors.fg, textAlign: "center", marginTop: space.sm, marginBottom: space.sm },
+  bigCode: { fontSize: 40, fontWeight: "900", letterSpacing: 2, color: colors.fg },
   banner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginHorizontal: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    borderRadius: 14,
+    marginHorizontal: space.lg,
+    paddingVertical: space.lg,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.md,
   },
-  bannerOk: { backgroundColor: "#111827" },
-  bannerWarn: { backgroundColor: "#8a1c1c" },
-  bannerText: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  bannerAction: { color: "#9fb3d1", fontSize: 14, fontWeight: "700" },
-  status: { fontWeight: "600", marginTop: 8, marginBottom: 4, marginHorizontal: 16 },
-  statusToast: { color: "#1b7a3d" },
-  statusIdle: { color: "#888" },
-  body2: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
+  bannerLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: space.sm },
+  bannerOk: { backgroundColor: colors.primary },
+  bannerWarn: { backgroundColor: colors.destructive },
+  bannerText: { ...t.title, color: colors.onPrimary, marginLeft: space.sm, flexShrink: 1 },
+  bannerAction: { fontSize: 14, fontWeight: "700", color: "#CBD5E1" },
+  status: { ...t.caption, fontWeight: "600", marginTop: space.sm, marginBottom: space.xs, marginHorizontal: space.lg },
+  statusToast: { color: colors.accent },
+  statusIdle: { color: colors.mutedFg },
+  body2: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xl },
   flex: { flex: 1 },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#555",
-    marginTop: 16,
-    marginBottom: 6,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
+  fieldLabelRow: { flexDirection: "row", alignItems: "center", marginTop: space.lg, marginBottom: space.sm },
+  fieldLabel: { ...t.label, color: colors.mutedFg },
   photoRow: { flexDirection: "row", alignItems: "center" },
-  rightCol: { flex: 1, marginLeft: 12, alignItems: "flex-end" },
-  thumb: { width: 84, height: 84, borderRadius: 10, backgroundColor: "#e5e5e5" },
-  thumbEmpty: { alignItems: "center", justifyContent: "center" },
-  thumbEmptyText: { color: "#666", fontSize: 12 },
+  rightCol: { flex: 1, marginLeft: space.md, alignItems: "flex-end" },
+  thumb: { width: 84, height: 84, borderRadius: radius.md, backgroundColor: colors.muted },
+  thumbEmpty: { alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
   chip: {
+    flexDirection: "row",
+    alignItems: "center",
     alignSelf: "flex-start",
-    backgroundColor: "#eef1f5",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    backgroundColor: colors.muted,
+    borderRadius: radius.sm,
+    paddingVertical: space.md,
+    paddingHorizontal: space.md,
   },
-  chipText: { fontSize: 16, fontWeight: "700", color: "#111" },
+  chipText: { ...t.bodyStrong, color: colors.fg, marginLeft: space.sm },
   inputRow: { flexDirection: "row", alignItems: "center" },
   input: {
     borderWidth: 1,
-    borderColor: "#bbb",
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    minHeight: MIN_TAP,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    minHeight: HIT,
     fontSize: 16,
-    backgroundColor: "#fafafa",
+    color: colors.fg,
+    backgroundColor: colors.surface,
   },
-  multiline: { minHeight: 72, paddingTop: 12, paddingBottom: 12, textAlignVertical: "top" },
-  inputBad: { borderColor: "#b45309", backgroundColor: "#fff7ed" },
-  warn: { color: "#b45309", fontSize: 13, marginTop: 4, fontWeight: "600" },
-  aiRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
-  aiState: { color: "#555", fontSize: 13, flex: 1, marginLeft: 12 },
-  body: { fontSize: 15, color: "#333", textAlign: "center", marginVertical: 2 },
-  fixedBtn: { minWidth: 132 },
+  multiline: { minHeight: 76, paddingTop: space.md, paddingBottom: space.md, textAlignVertical: "top" },
+  inputBad: { borderColor: colors.warning, backgroundColor: "#FFFBEB" },
+  warn: { color: colors.warning, fontSize: 13, marginTop: space.xs, fontWeight: "600" },
+  aiRow: { flexDirection: "row", alignItems: "center", marginTop: space.sm },
+  aiState: { ...t.caption, color: colors.mutedFg, flex: 1, marginLeft: space.md },
+  bodyCenter: { ...t.body, color: colors.mutedFg, textAlign: "center" },
+  fixedBtn: { minWidth: 136 },
   onCard: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "stretch",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: space.lg,
+    marginBottom: space.md,
   },
-  onTitle: { fontSize: 16, fontWeight: "700", color: "#111" },
-  onSub: { fontSize: 13, color: "#666", marginTop: 3 },
+  onIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.muted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  onTitle: { ...t.title, color: colors.fg },
+  onSub: { ...t.caption, color: colors.mutedFg, marginTop: 3 },
   primaryBtn: {
-    backgroundColor: "#111",
+    flexDirection: "row",
+    backgroundColor: colors.primary,
     minHeight: 56,
-    paddingHorizontal: 18,
-    borderRadius: 12,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  primaryBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  accentBtn: { backgroundColor: colors.accent },
+  primaryBtnText: { color: colors.onPrimary, fontSize: 17, fontWeight: "700" },
   secondaryBtn: {
-    backgroundColor: "#eee",
-    minHeight: MIN_TAP,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    flexDirection: "row",
+    backgroundColor: colors.muted,
+    minHeight: HIT,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  secondaryBtnText: { color: "#111", fontSize: 15, fontWeight: "600" },
-  btnDisabled: { opacity: 0.35 },
+  secondaryBtnText: { color: colors.fg, fontSize: 15, fontWeight: "600" },
+  btnDisabled: { opacity: 0.4 },
   actionBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 28,
+    paddingHorizontal: space.lg,
+    paddingTop: space.md,
+    paddingBottom: space.xxl,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#ddd",
-    backgroundColor: "#fff",
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
   },
 });

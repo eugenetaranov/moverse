@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { CameraView, type CameraView as CameraViewType } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
 import * as ImageManipulator from "expo-image-manipulator";
 import { classify } from "./labels";
 import { buzzOk, buzzErr, tap } from "./haptics";
@@ -87,11 +88,17 @@ export default function Capture({ startPhase, itemCode, onDone, onCancel }: Prop
 
       {/* top controls */}
       <View style={styles.topBar} pointerEvents="box-none">
-        <TouchableOpacity style={styles.chip} onPress={onCancel}>
-          <Text style={styles.chipText}>✕ Cancel</Text>
+        <TouchableOpacity style={styles.chip} onPress={onCancel} accessibilityLabel="Cancel">
+          <Ionicons name="close" size={18} color="#fff" />
+          <Text style={styles.chipText}>Cancel</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.chip} onPress={() => setTorch((t) => !t)}>
-          <Text style={styles.chipText}>{torch ? "🔦 On" : "🔦 Off"}</Text>
+        <TouchableOpacity
+          style={[styles.chip, torch && styles.chipOn]}
+          onPress={() => setTorch((v) => !v)}
+          accessibilityLabel="Toggle torch"
+        >
+          <Ionicons name={torch ? "flashlight" : "flashlight-outline"} size={18} color="#fff" />
+          <Text style={styles.chipText}>Torch</Text>
         </TouchableOpacity>
       </View>
 
@@ -123,12 +130,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   chip: {
-    backgroundColor: "rgba(0,0,0,0.55)",
-    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.6)",
+    minHeight: 44,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 24,
+    borderRadius: 999,
   },
-  chipText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  chipOn: { backgroundColor: "rgba(4,120,87,0.85)" },
+  chipText: { color: "#fff", fontSize: 15, fontWeight: "600", marginLeft: 6 },
   centerOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   reticle: {
     width: 220,
