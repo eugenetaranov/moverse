@@ -458,6 +458,39 @@ export default function Pack() {
   const draftEmpty = draft.itemCode.trim() === "" && draft.photoUri === "";
   const canSave = !saving && boxOk && descOk && (!needCode || itemOk);
 
+  const photoTile = (
+    <TouchableOpacity
+      onPress={() => setScreen("photo")}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={draft.photoUri ? "Change photo" : "Add photo"}
+      style={styles.photoTile}
+    >
+      {draft.photoUri ? (
+        <>
+          <Image source={{ uri: draft.photoUri }} style={styles.photoImg} />
+          <View style={styles.photoBadge}>
+            <Ionicons name="camera" size={16} color="#fff" />
+          </View>
+        </>
+      ) : (
+        <View style={styles.photoEmpty}>
+          <Ionicons name="add" size={30} color={colors.mutedFg} />
+          <Text style={styles.photoEmptyText}>Add photo</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+
+  const printStatusLine =
+    printStatus === "done"
+      ? { text: "Printed", color: colors.accent }
+      : printStatus === "printing"
+        ? { text: "Printing…", color: colors.mutedFg }
+        : printStatus === "failed"
+          ? { text: "Print failed — tap to retry", color: colors.warning }
+          : { text: "Not printed", color: colors.mutedFg };
+
   return (
     <View style={styles.screen}>
       <TouchableOpacity
@@ -478,49 +511,61 @@ export default function Pack() {
       </Text>
 
       <ScrollView contentContainerStyle={styles.body2} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity
-          onPress={() => setScreen("photo")}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={draft.photoUri ? "Change photo" : "Add photo"}
-          style={styles.photoTile}
-        >
-          {draft.photoUri ? (
-            <>
-              <Image source={{ uri: draft.photoUri }} style={styles.photoImg} />
-              <View style={styles.photoBadge}>
-                <Ionicons name="camera" size={16} color="#fff" />
-              </View>
-            </>
-          ) : (
-            <View style={styles.photoEmpty}>
-              <Ionicons name="add" size={30} color={colors.mutedFg} />
-              <Text style={styles.photoEmptyText}>Add photo</Text>
+        {mode === "assign" ? (
+          // Photo + code as the item's "identity" pair, side by side.
+          <View style={styles.identityRow}>
+            {photoTile}
+            <View style={styles.identityCol}>
+              <FieldLabel text="Item code" done={itemOk} />
+              {draft.itemCode ? (
+                // Assigned: the code as a value (not a button) + reprint.
+                <>
+                  <View style={styles.codeValueRow}>
+                    <Ionicons name="pricetag-outline" size={18} color={colors.accent} />
+                    <Text style={styles.codeValue} numberOfLines={1}>
+                      {draft.itemCode}
+                    </Text>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity
+                      style={styles.reprintBtn}
+                      onPress={() => printLabel(draft.itemCode)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Reprint label ${draft.itemCode}`}
+                    >
+                      <Ionicons name="print-outline" size={20} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.codeStatus, { color: printStatusLine.color }]}>
+                    {printStatusLine.text}
+                  </Text>
+                </>
+              ) : (
+                // No code yet: an action button, not a field.
+                <TouchableOpacity
+                  style={[styles.assignPill, busy && styles.btnDisabled]}
+                  onPress={assignCode}
+                  disabled={busy}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Assign and print an item code"
+                >
+                  {busy ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Ionicons name="print-outline" size={18} color={colors.primary} />
+                  )}
+                  <Text style={styles.assignPillText}>{busy ? "Assigning…" : "Assign & print"}</Text>
+                </TouchableOpacity>
+              )}
             </View>
-          )}
-        </TouchableOpacity>
-
-        {mode !== "none" ? (
+          </View>
+        ) : (
+          // scan: photo, then the real code input; none: photo only.
           <>
-            <FieldLabel text="Item code" done={itemOk} />
-            {mode === "assign" ? (
-              <TouchableOpacity
-                style={styles.chip}
-                onPress={assignCode}
-                disabled={busy || draft.itemCode !== ""}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={draft.itemCode ? "pricetag-outline" : "add-circle-outline"}
-                  size={16}
-                  color={colors.mutedFg}
-                />
-                <Text style={styles.chipText}>
-                  {draft.itemCode || (busy ? "Assigning…" : "Tap to assign & print a code")}
-                </Text>
-              </TouchableOpacity>
-            ) : (
+            {photoTile}
+            {mode === "scan" ? (
               <>
+                <FieldLabel text="Item code" done={itemOk} />
                 <View style={styles.inputRow}>
                   <TextField
                     style={styles.flex}
@@ -541,9 +586,9 @@ export default function Pack() {
                 </View>
                 {itemBad ? <Text style={styles.warn}>Expected an {ITEM_PREFIX} code</Text> : null}
               </>
-            )}
+            ) : null}
           </>
-        ) : null}
+        )}
 
         <View style={styles.descHeader}>
           <FieldLabel text="Description / notes" done={descOk} />
@@ -826,6 +871,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   photoEmptyText: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
+  identityRow: { flexDirection: "row", alignItems: "flex-start", gap: space.md },
+  identityCol: { flex: 1, minHeight: 104 },
+  assignPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    minHeight: 52,
+    borderRadius: radius.md,
+    backgroundColor: colors.muted,
+    paddingHorizontal: space.md,
+  },
+  assignPillText: { ...t.bodyStrong, color: colors.primary },
+  codeValueRow: { flexDirection: "row", alignItems: "center" },
+  codeValue: { fontSize: 20, fontWeight: "800", letterSpacing: 0.5, color: colors.fg, marginLeft: 6 },
+  codeStatus: { ...t.caption, marginTop: space.xs },
+  reprintBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: colors.muted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   chip: {
     flexDirection: "row",
     alignItems: "center",
