@@ -15,4 +15,5 @@ export type BrowseStackParamList = {
   BrowseHome: undefined;
   BoxDetail: { boxCode: string; name?: string };
   ItemDetail: { item: Item };
+  Settings: undefined;
 };

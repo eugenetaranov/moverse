@@ -22,6 +22,16 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 const PackNav = createNativeStackNavigator<PackStackParamList>();
 const BrowseNav = createNativeStackNavigator<BrowseStackParamList>();
 
+// Shared header-right entry to Settings, so both top-level screens (Pack home
+// and Browse home) expose the same action in the same place.
+function SettingsButton({ onPress }: { onPress: () => void }) {
+  return (
+    <TouchableOpacity onPress={onPress} hitSlop={12} accessibilityRole="button" accessibilityLabel="Settings">
+      <Ionicons name="settings-outline" size={22} color={colors.mutedFg} />
+    </TouchableOpacity>
+  );
+}
+
 const navTheme = {
   ...DefaultTheme,
   colors: {
@@ -42,16 +52,7 @@ function PackStack() {
         component={Pack}
         options={({ navigation }) => ({
           title: "Moverse",
-          headerRight: () => (
-            <TouchableOpacity
-              onPress={() => navigation.navigate("Settings")}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-            >
-              <Ionicons name="settings-outline" size={22} color={colors.mutedFg} />
-            </TouchableOpacity>
-          ),
+          headerRight: () => <SettingsButton onPress={() => navigation.navigate("Settings")} />,
         })}
       />
       <PackNav.Screen name="Settings" component={Settings} options={{ title: "Settings" }} />
@@ -62,9 +63,17 @@ function PackStack() {
 function BrowseStack() {
   return (
     <BrowseNav.Navigator screenOptions={stackScreenOptions}>
-      <BrowseNav.Screen name="BrowseHome" component={BrowseHome} options={{ title: "Inventory" }} />
+      <BrowseNav.Screen
+        name="BrowseHome"
+        component={BrowseHome}
+        options={({ navigation }) => ({
+          title: "Inventory",
+          headerRight: () => <SettingsButton onPress={() => navigation.navigate("Settings")} />,
+        })}
+      />
       <BrowseNav.Screen name="BoxDetail" component={BoxDetail} options={{ title: "Box" }} />
       <BrowseNav.Screen name="ItemDetail" component={ItemDetail} options={{ title: "Item" }} />
+      <BrowseNav.Screen name="Settings" component={Settings} options={{ title: "Settings" }} />
     </BrowseNav.Navigator>
   );
 }
