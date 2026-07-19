@@ -7,6 +7,7 @@ import { Item, clearInventoryCache, deleteItem, updateItem } from "../inventory"
 import { PrimaryButton, SecondaryButton, FieldLabel, TextField, Badge, Chip } from "../ui";
 import { colors, radius, space, type as t } from "../theme";
 import { isWithMe } from "./cards";
+import { BoxPicker } from "./BoxPicker";
 import Scanner from "../Scanner";
 
 type Props = NativeStackScreenProps<BrowseStackParamList, "ItemDetail">;
@@ -143,8 +144,10 @@ export default function ItemDetail({ route, navigation }: Props) {
         )}
       </View>
       <View style={{ height: space.sm }} />
-      <SecondaryButton title="Add / move to a box" icon="qr-code-outline" onPress={() => setScanning(true)} disabled={saving} />
-      <Text style={styles.hint}>Tap a box chip to remove it. Scanning a box adds this item to it.</Text>
+      <BoxPicker onPick={(code) => onScanBox(code)} exclude={item.boxCodes} label="Add to an existing box" />
+      <View style={{ height: space.sm }} />
+      <SecondaryButton title="Or scan a box label" icon="qr-code-outline" onPress={() => setScanning(true)} disabled={saving} />
+      <Text style={styles.hint}>Tap a box chip to remove it.</Text>
 
       <View style={{ height: space.xl }} />
       <SecondaryButton title="Delete item" icon="trash-outline" onPress={confirmDelete} disabled={saving} />
