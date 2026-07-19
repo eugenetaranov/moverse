@@ -52,8 +52,8 @@ async function requestBlePermissions(): Promise<boolean> {
 }
 
 const MODES: { key: LabelingMode; icon: IconName; title: string; sub: string }[] = [
-  { key: "scan", icon: "qr-code-outline", title: "Scan pre-made labels", sub: "Printed sheets / rolls — scan each" },
   { key: "assign", icon: "print-outline", title: "App assigns codes", sub: "Print or hand-write the next code" },
+  { key: "scan", icon: "qr-code-outline", title: "Scan pre-made labels", sub: "Printed sheets / rolls — scan each" },
   { key: "none", icon: "camera-outline", title: "No codes", sub: "Just name a box, photograph items" },
 ];
 
@@ -74,7 +74,7 @@ export default function Settings() {
   // Live per-printer size edits (by device id). A printer's draft falls back to
   // its saved size; editing updates the draft, and Save commits it.
   const [sizeDraft, setSizeDraft] = useState<Record<string, LabelSize>>({});
-  const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
+  const log = (s: string) => setLines((l) => [...l.slice(-59), s]);
 
   function editSize(id: string, current: LabelSize, patch: Partial<LabelSize>) {
     setSizeDraft((prev) => ({ ...prev, [id]: { ...current, ...patch } }));
@@ -163,11 +163,13 @@ export default function Settings() {
     try {
       await printers.forget(mp.id);
       log(`disconnected ${mp.name}`);
+      if (printers.count === 0) setLines([]); // no printers left → drop the log
     } finally {
       setBusy(false);
     }
   }
   async function printTestOn(mp: ManagedPrinter) {
+    setLines([]); // fresh log so it shows just this print
     setPrintingId(mp.id);
     try {
       const { widthPx, heightPx } = labelPx(mp.labelSize, mp.model.widthPx);
@@ -406,8 +408,8 @@ export default function Settings() {
       <View style={styles.tuneBlock}>
         <Text style={styles.tuneLabel}>Density</Text>
         <Segmented
-          options={[1, 2, 3, 4, 5].map((d) => ({ value: String(d), label: String(d) }))}
-          value={String(tuning.density)}
+          options={[1, 2, 3].map((d) => ({ value: String(d), label: String(d) }))}
+          value={String(Math.min(3, tuning.density))}
           onChange={(v) => updateTuning({ density: Number(v) })}
         />
       </View>
@@ -499,6 +501,15 @@ export default function Settings() {
                 >
                   <Ionicons name="copy-outline" size={16} color={colors.accent} />
                   <Text style={styles.modalActionText}>Copy</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setLines([])}
+                  disabled={lines.length === 0}
+                  hitSlop={8}
+                  style={styles.modalAction}
+                >
+                  <Ionicons name="trash-outline" size={16} color={colors.accent} />
+                  <Text style={styles.modalActionText}>Clear</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => setLogOpen(false)} hitSlop={8} style={styles.modalAction}>
                   <Ionicons name="close" size={16} color={colors.fg} />
