@@ -223,6 +223,16 @@ export default function Pack() {
     if (!code) return;
     if (!printer.connected || !printer.client) {
       setPrintStatus("noprinter");
+      buzzErr();
+      Alert.alert(
+        "Printer not connected",
+        `Can't print label ${code}. Connect the printer to print it, or write the code on the item by hand.`,
+        [
+          { text: "Connect & print", onPress: () => void connectPrinter() },
+          { text: "Write by hand" },
+          { text: "Cancel", style: "cancel" },
+        ],
+      );
       return;
     }
     setPrintStatus("printing");
@@ -233,6 +243,15 @@ export default function Pack() {
     } catch {
       buzzErr();
       setPrintStatus("failed");
+      Alert.alert(
+        "Print failed",
+        `Couldn't print label ${code} — the printer may have disconnected. Retry, or write the code by hand.`,
+        [
+          { text: "Retry", onPress: () => void printLabel(code) },
+          { text: "Write by hand" },
+          { text: "Cancel", style: "cancel" },
+        ],
+      );
     }
   }
 
