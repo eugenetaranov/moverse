@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,7 +15,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { useCameraPermissions } from "expo-camera";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import Scanner from "../Scanner";
@@ -147,6 +147,19 @@ export default function Pack() {
       loadTuning().then(setTuning);
     }
   }, [screen]);
+
+  // Settings is a pushed screen (Pack isn't remounted when you come back), so
+  // reload the labeling mode + label options every time Pack regains focus —
+  // otherwise the home screen keeps showing the previous mode's UI.
+  useFocusEffect(
+    useCallback(() => {
+      loadMode().then(setModeState);
+      loadLabelSize().then(setLabelSize);
+      loadTuning().then(setTuning);
+      loadBoxExtra().then(setBoxExtra);
+      loadBoxQr().then(setBoxQr);
+    }, []),
+  );
 
   // Full-screen surfaces (camera, onboarding, permission gate) should own the
   // whole screen, so hide the stack header and the bottom tab bar while any of
