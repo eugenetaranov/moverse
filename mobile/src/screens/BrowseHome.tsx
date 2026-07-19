@@ -7,7 +7,7 @@ import type { BrowseStackParamList } from "../navTypes";
 import { Box, Item, clearInventoryCache, deleteBox, deleteItem, loadInventory } from "../inventory";
 import { Segmented, LoadingState, EmptyState, ErrorState } from "../ui";
 import { colors, radius, space, HIT } from "../theme";
-import { BoxCard, ItemRow } from "./cards";
+import { BoxCard, ItemRow, SwipeToDelete } from "./cards";
 
 type Props = NativeStackScreenProps<BrowseStackParamList, "BrowseHome">;
 type Seg = "boxes" | "items";
@@ -152,11 +152,13 @@ export default function BrowseHome({ navigation }: Props) {
           data={shownItems}
           keyExtractor={(it) => it.itemId}
           renderItem={({ item }) => (
-            <ItemRow
-              item={item}
-              onPress={() => navigation.navigate("ItemDetail", { item })}
-              onLongPress={() => confirmDeleteItem(item)}
-            />
+            <SwipeToDelete onDelete={() => confirmDeleteItem(item)}>
+              <ItemRow
+                item={item}
+                onPress={() => navigation.navigate("ItemDetail", { item })}
+                onLongPress={() => confirmDeleteItem(item)}
+              />
+            </SwipeToDelete>
           )}
           contentContainerStyle={styles.list}
           refreshControl={refreshCtl}
@@ -175,11 +177,13 @@ export default function BrowseHome({ navigation }: Props) {
           data={shownBoxes}
           keyExtractor={(b) => b.boxCode}
           renderItem={({ item }) => (
-            <BoxCard
-              box={item}
-              onPress={() => navigation.navigate("BoxDetail", { boxCode: item.boxCode, name: item.name })}
-              onLongPress={() => confirmDeleteBox(item)}
-            />
+            <SwipeToDelete onDelete={() => confirmDeleteBox(item)}>
+              <BoxCard
+                box={item}
+                onPress={() => navigation.navigate("BoxDetail", { boxCode: item.boxCode, name: item.name })}
+                onLongPress={() => confirmDeleteBox(item)}
+              />
+            </SwipeToDelete>
           )}
           contentContainerStyle={styles.list}
           refreshControl={refreshCtl}
@@ -192,7 +196,7 @@ export default function BrowseHome({ navigation }: Props) {
           }
         />
       )}
-      <Text style={styles.hint}>Long-press a row to delete.</Text>
+      <Text style={styles.hint}>Swipe a row right, or long-press, to delete.</Text>
     </View>
   );
 }

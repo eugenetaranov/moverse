@@ -2,9 +2,42 @@
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { Swipeable } from "react-native-gesture-handler";
 import type { Box, Item } from "../inventory";
 import { Badge, Chip, RowCard } from "../ui";
 import { colors, radius, space, type as t } from "../theme";
+
+// Wrap a list row so swiping it right reveals a Delete action.
+export function SwipeToDelete({
+  children,
+  onDelete,
+}: {
+  children: React.ReactNode;
+  onDelete: () => void;
+}) {
+  const ref = React.useRef<Swipeable>(null);
+  return (
+    <Swipeable
+      ref={ref}
+      friction={2}
+      leftThreshold={72}
+      renderLeftActions={() => (
+        <View style={styles.deleteAction}>
+          <Ionicons name="trash-outline" size={20} color="#fff" />
+          <Text style={styles.deleteText}>Delete</Text>
+        </View>
+      )}
+      onSwipeableOpen={(dir) => {
+        if (dir === "left") {
+          ref.current?.close();
+          onDelete();
+        }
+      }}
+    >
+      {children}
+    </Swipeable>
+  );
+}
 
 export function isSuitcase(type: string): boolean {
   return /suitcase/i.test(type);
@@ -167,6 +200,17 @@ const styles = StyleSheet.create({
   },
   rowThumb: { width: 56, height: 56, borderRadius: radius.sm, backgroundColor: colors.muted },
   rowBody: { flex: 1 },
+  deleteAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: colors.destructive,
+    borderRadius: radius.md,
+    paddingHorizontal: space.lg,
+    marginRight: space.md,
+  },
+  deleteText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   code: { ...t.bodyStrong, color: colors.fg },
   desc: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: space.sm },

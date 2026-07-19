@@ -7,6 +7,7 @@ import { NavigationContainer, DefaultTheme } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Pack from "./src/screens/Pack";
@@ -80,8 +81,9 @@ function BrowseStack() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <NavigationContainer theme={navTheme}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <NavigationContainer theme={navTheme}>
         <Tab.Navigator
           screenOptions={({ route }) => ({
             headerShown: false,
@@ -104,7 +106,8 @@ export default function App() {
           <Tab.Screen name="Pack" component={PackStack} options={{ title: "Pack" }} />
           <Tab.Screen name="Browse" component={BrowseStack} options={{ title: "Browse" }} />
         </Tab.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

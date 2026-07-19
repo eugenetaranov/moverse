@@ -6,7 +6,7 @@ import type { BrowseStackParamList } from "../navTypes";
 import { Box, Item, clearInventoryCache, deleteBox, deleteItem, loadInventory, updateBox } from "../inventory";
 import { PrimaryButton, SecondaryButton, Segmented, FieldLabel, TextField, LoadingState, EmptyState, ErrorState } from "../ui";
 import { colors, space, type as t } from "../theme";
-import { ItemRow, isSuitcase, isWithMe } from "./cards";
+import { ItemRow, SwipeToDelete, isSuitcase, isWithMe } from "./cards";
 
 type Props = NativeStackScreenProps<BrowseStackParamList, "BoxDetail">;
 
@@ -123,11 +123,13 @@ export default function BoxDetail({ route, navigation }: Props) {
       data={items}
       keyExtractor={(it) => it.itemId}
       renderItem={({ item }) => (
-        <ItemRow
-          item={item}
-          onPress={() => navigation.navigate("ItemDetail", { item })}
-          onLongPress={() => confirmDeleteItem(item)}
-        />
+        <SwipeToDelete onDelete={() => confirmDeleteItem(item)}>
+          <ItemRow
+            item={item}
+            onPress={() => navigation.navigate("ItemDetail", { item })}
+            onLongPress={() => confirmDeleteItem(item)}
+          />
+        </SwipeToDelete>
       )}
       contentContainerStyle={styles.list}
       keyboardShouldPersistTaps="handled"
