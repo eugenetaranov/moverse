@@ -3,6 +3,10 @@
   "rewrites": [
     { "source": "/describe", "destination": "/api/describe" },
     { "source": "/save", "destination": "/api/save" },
-    { "source": "/next-code", "destination": "/api/next-code" }
+    { "source": "/next-code", "destination": "/api/next-code" },
+    { "source": "/boxes", "destination": "/api/boxes" },
+    { "source": "/items", "destination": "/api/items" },
+    { "source": "/item-update", "destination": "/api/item-update" },
+    { "source": "/box-update", "destination": "/api/box-update" }
   ]
 }
