@@ -6,6 +6,11 @@ export type RootTabParamList = {
   Browse: undefined;
 };
 
+export type PackStackParamList = {
+  PackHome: undefined;
+  Settings: undefined;
+};
+
 export type BrowseStackParamList = {
   BrowseHome: undefined;
   BoxDetail: { boxCode: string; name?: string };

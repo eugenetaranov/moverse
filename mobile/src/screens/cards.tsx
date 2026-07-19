@@ -3,7 +3,7 @@ import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Box, Item } from "../inventory";
-import { Badge, Chip } from "../ui";
+import { Badge, Chip, RowCard } from "../ui";
 import { colors, radius, space, type as t } from "../theme";
 
 export function isSuitcase(type: string): boolean {
@@ -56,39 +56,31 @@ export function ItemCard({ item, onPress }: { item: Item; onPress: () => void })
   );
 }
 
-// Row card for the Boxes list.
+// Row card for the Boxes list (built on the shared RowCard shell).
 export function BoxCard({ box, onPress }: { box: Box; onPress: () => void }) {
   return (
-    <TouchableOpacity
-      style={styles.boxRow}
+    <RowCard
+      leadingIcon={isSuitcase(box.type) ? "briefcase-outline" : "cube-outline"}
       onPress={onPress}
-      activeOpacity={0.85}
-      accessibilityRole="button"
       accessibilityLabel={`Box ${box.boxCode}${box.name ? ", " + box.name : ""}, ${box.itemCount} items`}
     >
-      <View style={styles.boxIcon}>
-        <Ionicons name={isSuitcase(box.type) ? "briefcase-outline" : "cube-outline"} size={22} color={colors.primary} />
-      </View>
-      <View style={{ flex: 1, marginLeft: space.md }}>
-        <Text style={styles.boxCode} numberOfLines={1}>
-          {box.boxCode}
+      <Text style={styles.boxCode} numberOfLines={1}>
+        {box.boxCode}
+      </Text>
+      {box.name ? (
+        <Text style={styles.boxName} numberOfLines={1}>
+          {box.name}
         </Text>
-        {box.name ? (
-          <Text style={styles.boxName} numberOfLines={1}>
-            {box.name}
-          </Text>
+      ) : null}
+      <View style={styles.boxMeta}>
+        {box.destination ? (
+          <Badge label={box.destination} tone={isWithMe(box.destination) ? "accent" : "primary"} />
         ) : null}
-        <View style={styles.boxMeta}>
-          {box.destination ? (
-            <Badge label={box.destination} tone={isWithMe(box.destination) ? "accent" : "primary"} />
-          ) : null}
-          <Text style={styles.count}>
-            {box.itemCount} item{box.itemCount === 1 ? "" : "s"}
-          </Text>
-        </View>
+        <Text style={styles.count}>
+          {box.itemCount} item{box.itemCount === 1 ? "" : "s"}
+        </Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.mutedFg} />
-    </TouchableOpacity>
+    </RowCard>
   );
 }
 
@@ -108,23 +100,6 @@ const styles = StyleSheet.create({
   desc: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: space.sm },
   noBox: { ...t.caption, color: colors.mutedFg, fontStyle: "italic" },
-  boxRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: space.md,
-  },
-  boxIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.muted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   boxCode: { ...t.title, color: colors.fg },
   boxName: { ...t.caption, color: colors.mutedFg, marginTop: 1 },
   boxMeta: { flexDirection: "row", alignItems: "center", gap: space.sm, marginTop: space.xs },

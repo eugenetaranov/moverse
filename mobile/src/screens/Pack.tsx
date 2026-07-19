@@ -14,10 +14,10 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { useCameraPermissions } from "expo-camera";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import Scanner from "../Scanner";
 import Capture, { type CaptureResult } from "../Capture";
-import Settings from "../Settings";
 import { describe, save } from "../api";
 import { classify } from "../labels";
 import { ITEM_PREFIX } from "../config";
@@ -42,8 +42,16 @@ import { printer } from "../niimbot/connection";
 import { renderLabel } from "../niimbot/label";
 import { reserveCode, seedReservation } from "../reservation";
 import { colors, radius, space, type as t, HIT } from "../theme";
-import { PrimaryButton, SecondaryButton, FieldLabel, Center, type IconName } from "../ui";
-import type { RootTabParamList } from "../navTypes";
+import {
+  PrimaryButton,
+  SecondaryButton,
+  FieldLabel,
+  Center,
+  TextField,
+  SelectableCard,
+  type IconName,
+} from "../ui";
+import type { PackStackParamList, RootTabParamList } from "../navTypes";
 
 interface Draft {
   itemCode: string;
@@ -54,11 +62,11 @@ interface Draft {
 }
 const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photoUri: "", photoBase64: "" };
 
-type Screen = "home" | "capture" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeCode" | "settings";
+type Screen = "home" | "capture" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeCode";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
 export default function Pack() {
-  const navigation = useNavigation<BottomTabNavigationProp<RootTabParamList, "Pack">>();
+  const navigation = useNavigation<NativeStackNavigationProp<PackStackParamList, "PackHome">>();
   const [permission, requestPermission] = useCameraPermissions();
 
   const [onboarded, setOnboardedState] = useState<boolean | null>(null);
@@ -93,10 +101,14 @@ export default function Pack() {
   }, [screen]);
 
   // Full-screen surfaces (camera, onboarding, permission gate) should own the
-  // whole screen, so hide the bottom tab bar while any of them is showing.
+  // whole screen, so hide the stack header and the bottom tab bar while any of
+  // them is showing.
   useEffect(() => {
     const immersive = !onboarded || !permission?.granted || screen !== "home";
-    navigation.setOptions({ tabBarStyle: immersive ? { display: "none" } : undefined });
+    navigation.setOptions({ headerShown: !immersive });
+    navigation
+      .getParent<BottomTabNavigationProp<RootTabParamList>>()
+      ?.setOptions({ tabBarStyle: immersive ? { display: "none" } : undefined });
   }, [navigation, onboarded, permission, screen]);
 
   function edit(patch: Partial<Draft>) {
@@ -248,7 +260,6 @@ export default function Pack() {
     );
 
   // ---- full-screen surfaces ----
-  if (screen === "settings") return <Settings onClose={() => setScreen("home")} />;
   if (screen === "capture")
     return <Capture startPhase="item" onDone={onCaptureDone} onCancel={() => setScreen("home")} />;
   if (screen === "photo")
@@ -323,18 +334,6 @@ export default function Pack() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.appName}>Moverse</Text>
-        <TouchableOpacity
-          onPress={() => setScreen("settings")}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Settings"
-        >
-          <Ionicons name="settings-outline" size={24} color={colors.mutedFg} />
-        </TouchableOpacity>
-      </View>
-
       <TouchableOpacity
         style={[styles.banner, boxOk ? styles.bannerOk : styles.bannerWarn]}
         onPress={() => setScreen("setBox")}
@@ -386,12 +385,12 @@ export default function Pack() {
             ) : (
               <>
                 <View style={styles.inputRow}>
-                  <TextInput
-                    style={[styles.input, styles.flex, itemBad && styles.inputBad]}
+                  <TextField
+                    style={styles.flex}
+                    invalid={itemBad}
                     value={draft.itemCode}
                     onChangeText={(v) => edit({ itemCode: v })}
                     placeholder={`${ITEM_PREFIX}0001`}
-                    placeholderTextColor={colors.mutedFg}
                     autoCapitalize="characters"
                     autoCorrect={false}
                   />
@@ -410,13 +409,11 @@ export default function Pack() {
         ) : null}
 
         <FieldLabel text="Description / notes" done={descOk} />
-        <TextInput
-          style={[styles.input, styles.multiline]}
+        <TextField
+          multiline
           value={draft.description}
           onChangeText={(v) => edit({ description: v })}
           placeholder="Describe the item, or add a note…"
-          placeholderTextColor={colors.mutedFg}
-          multiline
         />
         <View style={styles.aiRow}>
           <SecondaryButton
@@ -473,18 +470,18 @@ function Onboarding({ onPick }: { onPick: (m: LabelingMode) => void }) {
       <Text style={styles.h1}>How do you label items?</Text>
       <Text style={styles.bodyCenter}>You can change this anytime in Settings.</Text>
       <View style={{ height: space.lg }} />
-      {cards.map((c) => (
-        <TouchableOpacity key={c.m} style={styles.onCard} onPress={() => onPick(c.m)} activeOpacity={0.85}>
-          <View style={styles.onIcon}>
-            <Ionicons name={c.icon} size={24} color={colors.primary} />
-          </View>
-          <View style={{ marginLeft: space.md, flex: 1 }}>
-            <Text style={styles.onTitle}>{c.title}</Text>
-            <Text style={styles.onSub}>{c.sub}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.mutedFg} />
-        </TouchableOpacity>
-      ))}
+      <View style={{ alignSelf: "stretch" }}>
+        {cards.map((c) => (
+          <SelectableCard
+            key={c.m}
+            icon={c.icon}
+            title={c.title}
+            subtitle={c.sub}
+            onPress={() => onPick(c.m)}
+            trailing={<Ionicons name="chevron-forward" size={20} color={colors.mutedFg} />}
+          />
+        ))}
+      </View>
     </View>
   );
 }
@@ -505,12 +502,11 @@ function SetBox({
       <Text style={styles.h2}>Which box?</Text>
       <Text style={styles.bodyCenter}>Scan a BOX-… label, or type a name.</Text>
       <View style={{ height: space.lg }} />
-      <TextInput
-        style={[styles.input, { alignSelf: "stretch" }]}
+      <TextField
+        style={{ alignSelf: "stretch" }}
         value={text}
         onChangeText={setText}
         placeholder="e.g. BOX-0007 or Kitchen"
-        placeholderTextColor={colors.mutedFg}
         autoCapitalize="characters"
         autoCorrect={false}
       />
@@ -525,15 +521,7 @@ function SetBox({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg, paddingTop: 44 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: space.lg,
-    paddingBottom: space.sm,
-  },
-  appName: { ...t.h2, color: colors.fg },
+  screen: { flex: 1, backgroundColor: colors.bg, paddingTop: space.md },
   center: {
     flex: 1,
     alignItems: "center",

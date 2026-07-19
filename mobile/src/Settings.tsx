@@ -279,35 +279,6 @@ export default function Settings() {
   );
 }
 
-function Btn({
-  title,
-  onPress,
-  disabled,
-  icon,
-  tone = "primary",
-}: {
-  title: string;
-  onPress: () => void;
-  disabled?: boolean;
-  icon?: IconName;
-  tone?: "primary" | "accent" | "danger";
-}) {
-  const bg = tone === "accent" ? colors.accent : tone === "danger" ? colors.destructive : colors.primary;
-  return (
-    <TouchableOpacity
-      style={[styles.btn, { backgroundColor: bg }, disabled && { opacity: 0.4 }]}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.85}
-      accessibilityRole="button"
-      accessibilityLabel={title}
-    >
-      {icon ? <Ionicons name={icon} size={18} color={colors.onPrimary} style={{ marginRight: 6 }} /> : null}
-      <Text style={styles.btnText}>{title}</Text>
-    </TouchableOpacity>
-  );
-}
-
 // Free-edit numeric field: local string so the value can be cleared/retyped;
 // commits a clamped number on blur.
 function Field({
@@ -327,8 +298,7 @@ function Field({
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
         keyboardType="number-pad"
         value={text}
         onFocus={() => (editing.current = true)}
@@ -346,71 +316,17 @@ function Field({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: space.sm,
-  },
-  title: { ...t.display, color: colors.fg },
-  close: { fontSize: 16, fontWeight: "700", color: colors.accent },
-  section: { ...t.label, color: colors.mutedFg, marginTop: space.xl, marginBottom: space.sm },
-  modeCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: space.md,
-    marginBottom: space.sm,
-  },
-  modeCardOn: { borderColor: colors.primary, backgroundColor: "#F1F5F9" },
-  modeIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.sm,
-    backgroundColor: colors.muted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modeIconOn: { backgroundColor: colors.primary },
-  modeTitle: { ...t.bodyStrong, color: colors.fg },
-  modeSub: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
   stateRow: { flexDirection: "row", alignItems: "center", marginBottom: space.md },
   state: { ...t.bodyStrong, color: colors.fg, marginLeft: space.sm },
   row: { flexDirection: "row", gap: space.md },
-  btn: {
-    flex: 1,
-    flexDirection: "row",
-    minHeight: HIT,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  btnText: { color: colors.onPrimary, fontSize: 15, fontWeight: "700" },
+  flexBtn: { flex: 1 },
   hint: { ...t.caption, color: colors.mutedFg, marginBottom: space.md },
   field: { flex: 1 },
   fieldLabel: { ...t.caption, color: colors.mutedFg, marginBottom: space.xs },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    minHeight: HIT,
-    fontSize: 16,
-    color: colors.fg,
-    backgroundColor: colors.surface,
-  },
   formatRow: { flexDirection: "row", alignItems: "center", marginTop: space.md },
   format: { ...t.bodyStrong, color: colors.accent, marginLeft: space.sm },
-  tuneRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: space.sm },
-  tuneLabel: { ...t.caption, color: colors.mutedFg },
-  seg: { flexDirection: "row", borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, overflow: "hidden" },
-  segItem: { minWidth: 44, minHeight: 40, paddingHorizontal: space.md, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
-  segItemOn: { backgroundColor: colors.primary },
-  segText: { ...t.bodyStrong, color: colors.fg },
-  segTextOn: { color: colors.onPrimary },
+  tuneBlock: { marginBottom: space.md },
+  tuneLabel: { ...t.caption, color: colors.mutedFg, marginBottom: space.xs },
   logHeader: {
     flexDirection: "row",
     alignItems: "flex-end",
