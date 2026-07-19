@@ -1,28 +1,37 @@
-import { BleTransport, PrinterCandidate, scanPrinters } from "./transport";
+import { BleTransport, PrinterCandidate, ScanCancelledError, scanPrinters } from "./transport";
 import { NiimbotClient } from "./client";
 import { NiimbotModel, detectModel, modelById } from "./models";
+import type { LabelSize } from "../labelSettings";
 import {
   DEFAULT_ROLE,
   LabelKind,
   PrinterRole,
   RememberedPrinter,
+  loadPrinterLabels,
   loadRememberedPrinters,
   loadRoles,
   roleCovers,
+  savePrinterLabels,
   saveRememberedPrinters,
   saveRoles,
 } from "./roles";
 
-// One connected printer: its BLE link, print client, detected model, and role.
+export { ScanCancelledError } from "./transport";
+
+// One connected printer: its BLE link, print client, detected model, role, and
+// its own label stock size.
 export class ManagedPrinter {
   role: PrinterRole = DEFAULT_ROLE;
+  labelSize: LabelSize;
   constructor(
     public readonly id: string,
     public name: string,
     public model: NiimbotModel,
     public readonly transport: BleTransport,
     public readonly client: NiimbotClient,
-  ) {}
+  ) {
+    this.labelSize = model.defaultLabel;
+  }
 }
 
 type Listener = () => void;
@@ -33,9 +42,20 @@ type Listener = () => void;
 class PrinterManager {
   private printers = new Map<string, ManagedPrinter>(); // by device id
   private roles: Record<string, PrinterRole> = {};
+  private labels: Record<string, LabelSize> = {};
+  private loaded = false;
+  private scanController: AbortController | null = null;
   log: (s: string) => void = () => {};
   private listeners = new Set<Listener>();
   private reconnecting = false;
+
+  // Load persisted roles + per-printer label sizes once.
+  private async ensureLoaded(): Promise<void> {
+    if (this.loaded) return;
+    this.roles = await loadRoles();
+    this.labels = await loadPrinterLabels();
+    this.loaded = true;
+  }
 
   // --- Observation ---------------------------------------------------------
   subscribe(l: Listener): () => void {
@@ -58,12 +78,29 @@ class PrinterManager {
   }
 
   // --- Discovery / connection ---------------------------------------------
-  scan(timeoutMs = 6000): Promise<PrinterCandidate[]> {
-    return scanPrinters(timeoutMs, this.log);
+  get scanning(): boolean {
+    return this.scanController !== null;
+  }
+  // Cancel an in-flight scan (the pending scan()/connectFirstAvailable rejects
+  // with ScanCancelledError).
+  cancelScan(): void {
+    this.scanController?.abort();
+  }
+
+  async scan(timeoutMs = 6000): Promise<PrinterCandidate[]> {
+    this.scanController = new AbortController();
+    this.emit();
+    try {
+      return await scanPrinters(timeoutMs, this.log, this.scanController.signal);
+    } finally {
+      this.scanController = null;
+      this.emit();
+    }
   }
 
   // Connect an additional printer by device id without disturbing existing ones.
   async connectNew(deviceId: string, name?: string): Promise<ManagedPrinter> {
+    await this.ensureLoaded();
     const existing = this.printers.get(deviceId);
     if (existing) return existing;
     const t = new BleTransport(this.log);
@@ -79,6 +116,7 @@ class PrinterManager {
     const model = detectModel(name ?? resolvedName);
     const mp = new ManagedPrinter(deviceId, name ?? resolvedName, model, t, client);
     mp.role = this.roles[deviceId] ?? DEFAULT_ROLE;
+    mp.labelSize = this.labels[deviceId] ?? model.defaultLabel;
     this.printers.set(deviceId, mp);
     await this.remember();
     this.emit();
@@ -127,6 +165,15 @@ class PrinterManager {
     this.emit();
   }
 
+  // --- Per-printer label size ---------------------------------------------
+  setLabelSize(id: string, size: LabelSize): void {
+    const mp = this.printers.get(id);
+    if (mp) mp.labelSize = size;
+    this.labels[id] = size;
+    void savePrinterLabels(this.labels);
+    this.emit();
+  }
+
   // --- Routing -------------------------------------------------------------
   // Resolve a label kind to the printer that should print it: a printer whose
   // role equals the kind wins over an "any" printer; ties are broken by lowest
@@ -161,7 +208,7 @@ class PrinterManager {
     if (this.reconnecting) return;
     this.reconnecting = true;
     try {
-      this.roles = await loadRoles();
+      await this.ensureLoaded();
       const remembered = await loadRememberedPrinters();
       for (const r of remembered) {
         if (this.printers.has(r.id)) continue;
@@ -175,8 +222,10 @@ class PrinterManager {
           };
           await t.connectById(r.id);
           const client = new NiimbotClient(t, this.log);
-          const mp = new ManagedPrinter(r.id, r.name, modelById(r.model), t, client);
+          const model = modelById(r.model);
+          const mp = new ManagedPrinter(r.id, r.name, model, t, client);
           mp.role = this.roles[r.id] ?? DEFAULT_ROLE;
+          mp.labelSize = this.labels[r.id] ?? model.defaultLabel;
           this.printers.set(r.id, mp);
           this.emit();
         } catch (e) {

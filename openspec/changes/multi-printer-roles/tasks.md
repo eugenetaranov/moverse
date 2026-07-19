@@ -32,6 +32,14 @@
 - [x] 4.5 "Print test" targets the printer whose row the button sits in (per-device test)
 - [x] 4.6 Box-label printing routes via `printerForKind("box")` _(moved out of Settings per user feedback: printing lives in the add-a-new-box flow, `SetBox` in Pack.tsx; Settings Box-labels only holds the persisted extra text with an explicit Save button)_
 
+## 4b. Per-printer label size + scan feedback
+
+- [x] 4b.1 Add per-model `defaultLabel` to `niimbot/models.ts` (D-series small ≈12×40mm, B1 45×80mm) so a fresh printer prints at the right size
+- [x] 4b.2 Persist per-printer label size (`moverse.printerLabels`, id → LabelSize) in `roles.ts`; add `ManagedPrinter.labelSize` + `setLabelSize(id, size)` loaded on connect/reconnect
+- [x] 4b.3 Route rendering through the printer's own label size: item/box/test/preview use `printerForKind(kind)?.labelSize` (fixes the D110 image spanning 3 die-cut labels)
+- [x] 4b.4 Move label-size editing into each printer card (Width/Height + QR/text indicator); remove the single global "Label size" section
+- [x] 4b.5 Cancellable scan: `scanPrinters(..., signal)` + `ScanCancelledError`; `PrinterManager.scanning`/`cancelScan()`; Settings shows a spinner + cancel while searching
+
 ## 5. Item print path (`screens/Pack.tsx`)
 
 - [x] 5.1 Replace `printer.client.printImage(...)` with `printers.printerForKind("item")`; render item label at that printer's width/size

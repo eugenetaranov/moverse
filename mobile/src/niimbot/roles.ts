@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import type { LabelSize } from "../labelSettings";
 
 // What kind of label a job produces, and what a printer is allowed to print.
 export type LabelKind = "item" | "box";
@@ -90,6 +91,31 @@ export async function loadRoles(): Promise<Record<string, PrinterRole>> {
 export async function saveRoles(roles: Record<string, PrinterRole>): Promise<void> {
   try {
     await AsyncStorage.setItem(ROLES_KEY, JSON.stringify(roles));
+  } catch {
+    // best effort
+  }
+}
+
+// Per-printer label size (mm), keyed by device id. Each printer prints at its own
+// stock size; unset ids fall back to the model's default.
+const LABELS_KEY = "moverse.printerLabels";
+
+export async function loadPrinterLabels(): Promise<Record<string, LabelSize>> {
+  try {
+    const raw = await AsyncStorage.getItem(LABELS_KEY);
+    if (raw) {
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === "object") return obj as Record<string, LabelSize>;
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+export async function savePrinterLabels(labels: Record<string, LabelSize>): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LABELS_KEY, JSON.stringify(labels));
   } catch {
     // best effort
   }

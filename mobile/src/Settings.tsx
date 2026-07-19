@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -11,22 +12,18 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { ManagedPrinter, printers } from "./niimbot/connection";
+import { ManagedPrinter, ScanCancelledError, printers } from "./niimbot/connection";
 import { PrinterRole, ROLE_LABELS, ROLE_ORDER } from "./niimbot/roles";
 import { makeTestImage } from "./niimbot/testImage";
 import {
-  DEFAULT_LABEL,
   DEFAULT_TUNING,
   LABEL_TYPES,
-  LabelSize,
   PrintTuning,
   fitsQr,
   labelPx,
   loadBoxExtra,
-  loadLabelSize,
   loadTuning,
   saveBoxExtra,
-  saveLabelSize,
   saveTuning,
 } from "./labelSettings";
 import { LabelingMode, loadMode, saveMode } from "./labelingMode";
@@ -62,7 +59,6 @@ export default function Settings() {
   const printing = printingId !== null;
   const [, force] = useState(0);
   const [mode, setMode] = useState<LabelingMode>("assign");
-  const [label, setLabel] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
   const [boxExtra, setBoxExtra] = useState("");
   const [savedExtra, setSavedExtra] = useState("");
@@ -71,7 +67,6 @@ export default function Settings() {
 
   useEffect(() => {
     loadMode().then(setMode);
-    loadLabelSize().then(setLabel);
     loadTuning().then(setTuning);
     loadBoxExtra().then((v) => {
       setBoxExtra(v);
@@ -105,14 +100,6 @@ export default function Settings() {
       log("printers disconnected (not used in this mode)");
     }
   }
-  function updateLabel(patch: Partial<LabelSize>) {
-    setLabel((prev) => {
-      const next = { ...prev, ...patch };
-      void saveLabelSize(next);
-      return next;
-    });
-  }
-
   // Connect an additional printer (scan → first not-yet-connected device).
   async function addPrinter() {
     setBusy(true);
@@ -125,7 +112,11 @@ export default function Settings() {
       const mp = await printers.connectFirstAvailable();
       log(`connected: ${mp.name} (${mp.model.label})`);
     } catch (e) {
-      log(`connect failed: ${String((e as Error)?.message ?? e)}`);
+      if (e instanceof ScanCancelledError) {
+        log("scan cancelled");
+      } else {
+        log(`connect failed: ${String((e as Error)?.message ?? e)}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -142,7 +133,7 @@ export default function Settings() {
   async function printTestOn(mp: ManagedPrinter) {
     setPrintingId(mp.id);
     try {
-      const { widthPx, heightPx } = labelPx(label);
+      const { widthPx, heightPx } = labelPx(mp.labelSize);
       log(`printing test ${widthPx}x${heightPx} on ${mp.name} (d${tuning.density}, type ${tuning.labelType})…`);
       await mp.client.printImage(makeTestImage(widthPx, heightPx), tuning.density, tuning.labelType);
       log("print done");
@@ -240,6 +231,30 @@ export default function Settings() {
                 </View>
               ) : null}
 
+              <View style={styles.roleBlock}>
+                <Text style={styles.tuneLabel}>Label size (mm)</Text>
+                <View style={styles.row}>
+                  <Field
+                    label="Width"
+                    value={mp.labelSize.widthMm}
+                    onChange={(n) => printers.setLabelSize(mp.id, { ...mp.labelSize, widthMm: n })}
+                  />
+                  <Field
+                    label="Height"
+                    value={mp.labelSize.heightMm}
+                    onChange={(n) => printers.setLabelSize(mp.id, { ...mp.labelSize, heightMm: n })}
+                  />
+                </View>
+                <View style={styles.formatRow}>
+                  <Ionicons
+                    name={fitsQr(mp.labelSize) ? "qr-code-outline" : "text-outline"}
+                    size={15}
+                    color={colors.accent}
+                  />
+                  <Text style={styles.format}>{fitsQr(mp.labelSize) ? "QR code + text" : "Text only"}</Text>
+                </View>
+              </View>
+
               <View style={[styles.row, { marginTop: space.md }]}>
                 <Button
                   title="Disconnect"
@@ -264,13 +279,23 @@ export default function Settings() {
         })
       )}
       <View style={{ height: space.sm }} />
-      <Button
-        title={printers.list().length ? "Add another printer" : "Connect a printer"}
-        icon="add"
-        tone="accent"
-        onPress={addPrinter}
-        disabled={busy}
-      />
+      {printers.scanning ? (
+        <View style={styles.scanRow}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.scanText}>Searching for a printer…</Text>
+          <TouchableOpacity onPress={() => printers.cancelScan()} hitSlop={8} style={styles.scanCancel}>
+            <Ionicons name="close-circle" size={22} color={colors.mutedFg} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <Button
+          title={printers.list().length ? "Add another printer" : "Connect a printer"}
+          icon="add"
+          tone="accent"
+          onPress={addPrinter}
+          disabled={busy}
+        />
+      )}
       {coverageHint ? <Text style={[styles.hint, { marginTop: space.sm }]}>{coverageHint}</Text> : null}
       <TouchableOpacity
         style={styles.logMiniLink}
@@ -281,22 +306,6 @@ export default function Settings() {
         <Ionicons name="document-text-outline" size={13} color={colors.mutedFg} />
         <Text style={styles.logMiniText}>View printer log{lines.length ? ` (${lines.length})` : ""}</Text>
       </TouchableOpacity>
-
-      {/* Label size */}
-      <SectionHeader>Label size (mm)</SectionHeader>
-      <Text style={styles.hint}>Determines whether labels print as QR + text or text-only.</Text>
-      <View style={styles.row}>
-        <Field label="Width" value={label.widthMm} onChange={(n) => updateLabel({ widthMm: n })} />
-        <Field label="Height" value={label.heightMm} onChange={(n) => updateLabel({ heightMm: n })} />
-      </View>
-      <View style={styles.formatRow}>
-        <Ionicons
-          name={fitsQr(label) ? "qr-code-outline" : "text-outline"}
-          size={16}
-          color={colors.accent}
-        />
-        <Text style={styles.format}>{fitsQr(label) ? "QR code + text" : "Text only"}</Text>
-      </View>
 
       {/* Print tuning */}
       <SectionHeader>Print tuning</SectionHeader>
@@ -439,6 +448,19 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   roleBlock: { marginTop: space.md },
+  scanRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+    backgroundColor: colors.surface,
+  },
+  scanText: { ...t.body, color: colors.fg, flex: 1 },
+  scanCancel: { padding: 2 },
   stateRow: { flexDirection: "row", alignItems: "center", marginBottom: space.md },
   state: { ...t.bodyStrong, color: colors.fg, marginLeft: space.sm },
   row: { flexDirection: "row", gap: space.md },

@@ -254,7 +254,7 @@ export default function Pack() {
     }
     setPrintStatus("printing");
     try {
-      await p.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
+      await p.client.printImage(renderLabel(code, p.labelSize), tuning.density, tuning.labelType);
       buzzOk();
       setPrintStatus("done");
     } catch {
@@ -293,7 +293,7 @@ export default function Pack() {
       return;
     }
     try {
-      await p.client.printImage(renderBoxLabel(trimmed, boxExtra, labelSize), tuning.density, tuning.labelType);
+      await p.client.printImage(renderBoxLabel(trimmed, boxExtra, p.labelSize), tuning.density, tuning.labelType);
       buzzOk();
     } catch {
       buzzErr();
@@ -465,7 +465,7 @@ export default function Pack() {
         <Text style={styles.h2}>Label</Text>
         <Text style={styles.bigCode}>{draft.itemCode}</Text>
         <View style={{ height: space.md }} />
-        {fitsQr(labelSize) ? (
+        {fitsQr(printers.printerForKind("item")?.labelSize ?? labelSize) ? (
           <QrPreview text={draft.itemCode} />
         ) : (
           <Text style={styles.bodyCenter}>Text-only label (small stock)</Text>

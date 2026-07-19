@@ -20,19 +20,43 @@ export interface PrinterCandidate {
 // Scan for Niimbot printers and return the candidate set (deduped by id, sorted
 // by RSSI strongest-first) instead of grabbing the first match. Uses the shared
 // BleManager so it composes with already-connected printers.
-export async function scanPrinters(timeoutMs = 6000, log: Log = () => {}): Promise<PrinterCandidate[]> {
+export class ScanCancelledError extends Error {
+  constructor() {
+    super("scan cancelled");
+    this.name = "ScanCancelledError";
+  }
+}
+
+export async function scanPrinters(
+  timeoutMs = 6000,
+  log: Log = () => {},
+  signal?: AbortSignal,
+): Promise<PrinterCandidate[]> {
   const mgr = bleManager();
   const found = new Map<string, PrinterCandidate>();
   return new Promise<PrinterCandidate[]>((resolve, reject) => {
-    const finish = () => {
+    const cleanup = () => {
+      clearTimeout(timer);
       mgr.stopDeviceScan();
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const finish = () => {
+      cleanup();
       resolve([...found.values()].sort((a, b) => b.rssi - a.rssi));
     };
+    const onAbort = () => {
+      cleanup();
+      reject(new ScanCancelledError());
+    };
+    if (signal?.aborted) {
+      reject(new ScanCancelledError());
+      return;
+    }
     const timer = setTimeout(finish, timeoutMs);
+    signal?.addEventListener("abort", onAbort);
     mgr.startDeviceScan(null, { allowDuplicates: false }, (error, dev) => {
       if (error) {
-        clearTimeout(timer);
-        mgr.stopDeviceScan();
+        cleanup();
         reject(error);
         return;
       }

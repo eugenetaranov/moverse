@@ -56,6 +56,34 @@ printer from the earlier one-printer model SHALL migrate into the set as one ent
 - **WHEN** the app previously remembered exactly one printer under the old single-connection storage
 - **THEN** it loads as one entry in the new printer set with no data loss
 
+### Requirement: Per-printer label size
+
+Each printer SHALL carry its own label stock size (mm), defaulting to a sensible
+size for its detected model, and the size SHALL be persisted per device id and
+restored on reconnect. Rendering and the QR-vs-text-only choice for a job SHALL use
+the label size of the printer the job is routed to, so a small-format printer never
+inherits a large printer's dimensions.
+
+#### Scenario: Small printer does not inherit the large printer's size
+
+- **WHEN** a large-format printer is set to 45×80mm and a small-format printer (e.g. D110) is added
+- **THEN** the small printer defaults to its own small stock size rather than 45×80mm, so its label prints on a single die-cut label instead of spanning several
+
+#### Scenario: Label size persists per printer
+
+- **WHEN** the user sets a printer's label size and the printer later reconnects
+- **THEN** that printer comes back with its saved label size
+
+### Requirement: Discovery progress feedback
+
+While a printer scan is in progress, the UI SHALL show a busy indicator and offer a
+way to cancel the scan. Cancelling SHALL stop the scan promptly without connecting.
+
+#### Scenario: Spinner and cancel during scan
+
+- **WHEN** the user starts adding/searching for a printer
+- **THEN** a spinner is shown with a cancel control, and tapping cancel stops the search without connecting a printer
+
 ### Requirement: Per-printer disconnect
 
 The app SHALL allow disconnecting an individual printer by device id without
