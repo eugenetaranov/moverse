@@ -1,32 +1,19 @@
-// Minimal 5x7 bitmap font — just the characters used in item codes
-// (ITM-####: digits, I, T, M, hyphen, space). Each glyph is 7 rows of 5 bits,
-// MSB = leftmost pixel. Rendered pixel-by-pixel into the label bitmap.
-const GW = 5;
-const GH = 7;
+import { toByteArray } from "base64-js";
 
-const GLYPHS: Record<string, number[]> = {
-  "0": [0x0e, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0e],
-  "1": [0x04, 0x0c, 0x04, 0x04, 0x04, 0x04, 0x0e],
-  "2": [0x0e, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1f],
-  "3": [0x1f, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0e],
-  "4": [0x02, 0x06, 0x0a, 0x12, 0x1f, 0x02, 0x02],
-  "5": [0x1f, 0x10, 0x1e, 0x01, 0x01, 0x11, 0x0e],
-  "6": [0x06, 0x08, 0x10, 0x1e, 0x11, 0x11, 0x0e],
-  "7": [0x1f, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08],
-  "8": [0x0e, 0x11, 0x11, 0x0e, 0x11, 0x11, 0x0e],
-  "9": [0x0e, 0x11, 0x11, 0x0f, 0x01, 0x02, 0x0c],
-  I: [0x0e, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0e],
-  T: [0x1f, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04],
-  M: [0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11],
-  B: [0x1e, 0x11, 0x11, 0x1e, 0x11, 0x11, 0x1e],
-  O: [0x0e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0e],
-  X: [0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11],
-  "-": [0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00],
-  " ": [0, 0, 0, 0, 0, 0, 0],
-};
+// Classic 5x8 GLCD bitmap font (Adafruit, public domain), printable ASCII
+// 0x20–0x7E. Column-major: 5 bytes per glyph, each byte = 8 vertical pixels
+// with bit 0 = top row. Covers letters, digits, and punctuation so arbitrary
+// label text (codes AND free text like phone / address) renders.
+const FONT = toByteArray(
+  "AAAAAAAAAF8AAAAHAAcAFH8UfxQkKn8qEiMTCGRiNklWIFAACAcDAAAcIkEAAEEiHAAqHH8cKggIPggIAIBwMAAICAgICAAAYGAAIBAIBAI+UUlFPgBCf0AAcklJSUYhQUlNMxgUEn8QJ0VFRTk8SklJMUEhEQkHNklJSTZGSUkpHgAAFAAAAEA0AAAACBQiQRQUFBQUAEEiFAgCAVkJBj5BXVlOfBIREnx/SUlJNj5BQUEif0FBQT5/SUlJQX8JCQkBPkFBUXN/CAgIfwBBf0EAIEBBPwF/CBQiQX9AQEBAfwIcAn9/BAgQfz5BQUE+fwkJCQY+QVEhXn8JGSlGJklJSTIDAX8BAz9AQEA/HyBAIB8/QDhAP2MUCBRjAwR4BANhWUlNQwB/QUFBAgQIECAAQUFBfwQCAQIEQEBAQEAAAwcIACBUVHhAfyhERDg4REREKDhERCh/OFRUVBgACH4JAhikpJx4fwgEBHgARH1AACBAQD0AfxAoRAAAQX9AAHwEeAR4fAgEBHg4REREOPwYJCQYGCQkGPx8CAQECEhUVFQkBAQ/RCQ8QEAgfBwgQCAcPEAwQDxEKBAoREyQkJB8RGRUTEQACDZBAAAAdwAAAEE2CAACAQIEAg==",
+);
+const FIRST = 0x20;
+const GW = 5;
+const GH = 8;
 
 export const GLYPH_H = GH;
-// Unscaled width of a string: 5px/glyph + 1px spacing between glyphs.
+
+// Unscaled px width of a string: 5px/glyph + 1px spacing between glyphs.
 export function textWidth(s: string): number {
   return s.length === 0 ? 0 : s.length * (GW + 1) - 1;
 }
@@ -40,14 +27,17 @@ export function drawText(
   scale: number,
 ): void {
   let cx = x0;
-  for (const ch of text.toUpperCase()) {
-    const g = GLYPHS[ch] ?? GLYPHS[" "];
-    for (let row = 0; row < GH; row++) {
-      const bits = g[row];
+  for (const ch of text) {
+    const gi = ch.charCodeAt(0) - FIRST;
+    if (gi >= 0 && gi * 5 + 5 <= FONT.length) {
+      const base = gi * 5;
       for (let col = 0; col < GW; col++) {
-        if (bits & (1 << (GW - 1 - col))) {
-          for (let dy = 0; dy < scale; dy++)
-            for (let dx = 0; dx < scale; dx++) set(cx + col * scale + dx, y0 + row * scale + dy);
+        const bits = FONT[base + col];
+        for (let row = 0; row < GH; row++) {
+          if (bits & (1 << row)) {
+            for (let dy = 0; dy < scale; dy++)
+              for (let dx = 0; dx < scale; dx++) set(cx + col * scale + dx, y0 + row * scale + dy);
+          }
         }
       }
     }

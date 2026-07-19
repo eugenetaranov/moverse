@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -14,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { printer } from "./niimbot/connection";
 import { makeTestImage } from "./niimbot/testImage";
+import { renderBoxLabel } from "./niimbot/label";
 import {
   DEFAULT_LABEL,
   DEFAULT_TUNING,
@@ -22,8 +22,10 @@ import {
   PrintTuning,
   fitsQr,
   labelPx,
+  loadBoxExtra,
   loadLabelSize,
   loadTuning,
+  saveBoxExtra,
   saveLabelSize,
   saveTuning,
 } from "./labelSettings";
@@ -61,15 +63,39 @@ export default function Settings() {
   const [mode, setMode] = useState<LabelingMode>("assign");
   const [label, setLabel] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
+  const [boxExtra, setBoxExtra] = useState("");
+  const [boxLabelCode, setBoxLabelCode] = useState("");
   const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
 
   useEffect(() => {
     loadMode().then(setMode);
     loadLabelSize().then(setLabel);
     loadTuning().then(setTuning);
+    loadBoxExtra().then(setBoxExtra);
     printer.log = log;
     return printer.subscribe(() => force((n) => n + 1));
   }, []);
+
+  function updateBoxExtra(t: string) {
+    setBoxExtra(t);
+    void saveBoxExtra(t);
+  }
+
+  async function printBoxLabel() {
+    if (!printer.client) return;
+    const code = boxLabelCode.trim();
+    if (!code) return;
+    setPrinting(true);
+    try {
+      log(`printing box label ${code}…`);
+      await printer.client.printImage(renderBoxLabel(code, boxExtra, label), tuning.density, tuning.labelType);
+      log("box label printed");
+    } catch (e) {
+      log(`box print failed: ${String((e as Error)?.message ?? e)}`);
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   function updateTuning(patch: Partial<PrintTuning>) {
     setTuning((prev) => {
@@ -257,6 +283,39 @@ export default function Settings() {
           options={LABEL_TYPES.map((lt) => ({ value: String(lt.v), label: lt.label }))}
           value={String(tuning.labelType)}
           onChange={(v) => updateTuning({ labelType: Number(v) })}
+        />
+      </View>
+
+      {/* Box labels */}
+      <SectionHeader>Box labels</SectionHeader>
+      <Text style={styles.hint}>
+        Box labels print the box code (QR + text, or text-only by size) plus the extra text below.
+      </Text>
+      <Text style={styles.fieldLabel}>Extra text (phone / WhatsApp / address)</Text>
+      <TextField
+        multiline
+        value={boxExtra}
+        onChangeText={updateBoxExtra}
+        placeholder={"e.g. Call/WhatsApp +1 555 123 4567\n123 Main St, City"}
+      />
+      <View style={{ height: space.md }} />
+      <Text style={styles.fieldLabel}>Print a box label</Text>
+      <View style={styles.row}>
+        <View style={styles.flexBtn}>
+          <TextField
+            value={boxLabelCode}
+            onChangeText={setBoxLabelCode}
+            placeholder="BOX-0001"
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+        </View>
+        <Button
+          title="Print"
+          icon="print-outline"
+          onPress={printBoxLabel}
+          disabled={!printer.connected || boxLabelCode.trim() === "" || printing}
+          style={styles.flexBtn}
         />
       </View>
 

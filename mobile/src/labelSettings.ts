@@ -70,6 +70,23 @@ export async function saveTuning(t: PrintTuning): Promise<void> {
   }
 }
 
+// Free-form text printed on every box label (phone / WhatsApp / address).
+const BOX_EXTRA_KEY = "moverse.boxExtra";
+export async function loadBoxExtra(): Promise<string> {
+  try {
+    return (await AsyncStorage.getItem(BOX_EXTRA_KEY)) ?? "";
+  } catch {
+    return "";
+  }
+}
+export async function saveBoxExtra(t: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(BOX_EXTRA_KEY, t);
+  } catch {
+    // best effort
+  }
+}
+
 export const DOTS_PER_MM = 8; // B1 is 203 dpi ≈ 8 px/mm
 export const HEAD_PX = 384; // B1 printhead width cap
 
