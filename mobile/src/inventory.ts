@@ -19,6 +19,7 @@ export interface Item {
   description: string;
   photoUrl: string;
   photoThumbUrl: string;
+  photoUrls?: string[]; // all photos (full-res); optional for older backends
   boxCodes: string[];
   destination: string;
 }
@@ -90,6 +91,16 @@ export async function deleteBox(boxCode: string): Promise<void> {
     body: JSON.stringify({ boxCode }),
   });
   if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+}
+
+// Append a photo to an existing item (items can hold more than one photo).
+export async function addItemPhoto(itemId: string, imageBase64: string): Promise<void> {
+  const res = await fetch(`${WORKER_URL}/item-add-photo`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ itemId, imageBase64 }),
+  });
+  if (!res.ok) throw new Error(`Photo upload failed (${res.status})`);
 }
 
 // ---- session cache ----

@@ -374,6 +374,23 @@ function str(v: unknown): string {
   return "";
 }
 
+// Sort item/box lists most-recent first: higher numeric code (ITM-####/BOX-####)
+// on top; non-numeric (named) codes sort after, alphabetically.
+function byCodeDesc<T>(getCode: (x: T) => string) {
+  const num = (code: string): number | null => {
+    const m = /-(\d+)$/.exec(code.trim());
+    return m ? parseInt(m[1], 10) : null;
+  };
+  return (a: T, b: T): number => {
+    const na = num(getCode(a));
+    const nb = num(getCode(b));
+    if (na !== null && nb !== null) return nb - na; // higher number first
+    if (na !== null) return -1; // numeric codes before named ones
+    if (nb !== null) return 1;
+    return getCode(a).localeCompare(getCode(b));
+  };
+}
+
 /* ---------------- /boxes ---------------- */
 
 // All boxes with a link-count of the items in each. Reverse `Items` link on the
@@ -398,6 +415,7 @@ export async function handleListBoxes(c: Cfg): Promise<Response> {
       itemCount: Array.isArray(f["Items"]) ? (f["Items"] as unknown[]).length : 0,
     };
   });
+  boxes.sort(byCodeDesc((b) => b.boxCode));
   return json({ boxes });
 }
 
@@ -431,21 +449,22 @@ export async function handleListItems(req: Request, c: Cfg): Promise<Response> {
     const f = r.fields ?? {};
     const boxIds = Array.isArray(f["Box"]) ? (f["Box"] as string[]) : [];
     const boxCodes = boxIds.map((id) => idToCode.get(id) ?? "").filter((code) => code !== "");
-    const att = Array.isArray(f[c.photoField])
-      ? ((f[c.photoField] as AirtableAttachment[])[0] ?? null)
-      : null;
+    const atts = Array.isArray(f[c.photoField]) ? (f[c.photoField] as AirtableAttachment[]) : [];
+    const att = atts[0] ?? null;
     return {
       itemId: r.id,
       itemCode: str(f["Item Code"]),
       description: str(f["Description"]),
-      photoUrl: att?.url ?? "",
+      photoUrl: att?.url ?? "", // first photo (row thumbnail)
       photoThumbUrl: att?.thumbnails?.large?.url ?? att?.url ?? "",
+      photoUrls: atts.map((a) => a?.url ?? "").filter(Boolean), // all photos, full-res
       boxCodes,
       destination: str(f["Destination"]),
     };
   });
 
   if (boxFilter) items = items.filter((it) => it.boxCodes.includes(boxFilter));
+  items.sort(byCodeDesc((it) => it.itemCode));
   return json({ items });
 }
 
@@ -480,6 +499,21 @@ export async function handleItemUpdate(req: Request, c: Cfg): Promise<Response> 
     body: JSON.stringify({ fields }),
   });
   if (!resp.ok) throw new Error(`item_update_failed_${resp.status}`);
+  return json({ ok: true });
+}
+
+/* ---------------- /item-add-photo ---------------- */
+
+// Append a photo to an existing item's Photo attachment field (Airtable's upload
+// API appends rather than replaces), so an item can carry more than one photo.
+export async function handleItemAddPhoto(req: Request, c: Cfg): Promise<Response> {
+  const { itemId, imageBase64 } = (await req.json()) as {
+    itemId?: string;
+    imageBase64?: string;
+  };
+  if (!itemId) return json({ error: "missing_item" }, 400);
+  if (!imageBase64) return json({ error: "missing_image" }, 400);
+  await uploadPhoto(c, itemId, imageBase64);
   return json({ ok: true });
 }
 

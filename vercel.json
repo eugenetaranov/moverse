@@ -8,6 +8,7 @@
     { "source": "/boxes", "destination": "/api/boxes" },
     { "source": "/items", "destination": "/api/items" },
     { "source": "/item-update", "destination": "/api/item-update" },
+    { "source": "/item-add-photo", "destination": "/api/item-add-photo" },
     { "source": "/box-update", "destination": "/api/box-update" },
     { "source": "/item-delete", "destination": "/api/item-delete" },
     { "source": "/box-delete", "destination": "/api/box-delete" }
