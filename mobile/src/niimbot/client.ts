@@ -13,12 +13,9 @@ const T = {
   BITMAP_ROW: 0x85,
   BITMAP_ROW_INDEXED: 0x83,
   EMPTY_ROW: 0x84,
-  CHECK_LINE: 0x86,
   GET_STATUS: 0xa3,
 } as const;
 const RESP_STATUS = 0xb3; // In_PrintStatus
-const RESP_CHECK = 0xd3; // In_PrinterCheckLine
-const CHECK_EVERY = 200; // rows between flush/sync points
 const HEAD_PX = 384; // B1 printhead width
 
 export interface Bitmap {
@@ -90,8 +87,27 @@ export class NiimbotClient {
     await this.t.write(new NiimbotPacket(type, Uint8Array.from(data)).toBytes());
     await sleep(15);
   }
-  private write(type: number, data: number[]): Promise<void> {
-    return this.t.write(new NiimbotPacket(type, Uint8Array.from(data)).toBytes());
+  // Image-row write: prefer acknowledged (guaranteed delivery + flow control);
+  // fall back to no-response if the characteristic doesn't support it.
+  private ackMode: "unknown" | "ack" | "noack" = "unknown";
+  private async write(type: number, data: number[]): Promise<void> {
+    const bytes = new NiimbotPacket(type, Uint8Array.from(data)).toBytes();
+    if (this.ackMode !== "noack") {
+      try {
+        await this.t.writeAck(bytes);
+        if (this.ackMode === "unknown") {
+          this.ackMode = "ack";
+          this.log("(rows: write-with-response)");
+        }
+        return;
+      } catch {
+        if (this.ackMode === "unknown") {
+          this.ackMode = "noack";
+          this.log("(with-response unsupported → no-response)");
+        }
+      }
+    }
+    await this.t.write(bytes);
   }
 
   private waitFor(type: number, timeoutMs: number): Promise<NiimbotPacket | null> {
@@ -108,6 +124,7 @@ export class NiimbotClient {
 
   async printImage(img: Bitmap, density = 3, labelType = 1): Promise<void> {
     this.aborted = false;
+    this.ackMode = "unknown";
     const bpr = Math.ceil(img.width / 8);
     const totalPages = 1;
 
@@ -120,7 +137,6 @@ export class NiimbotClient {
     await this.send(T.SET_PAGE_SIZE, [...u16(img.height), ...u16(img.width), ...u16(1)]);
 
     let y = 0;
-    let nextCheck = CHECK_EVERY;
     while (y < img.height) {
       if (this.aborted) throw new Error("cancelled");
       const row = img.data.subarray(y * bpr, (y + 1) * bpr);
@@ -156,17 +172,8 @@ export class NiimbotClient {
       }
       const prev = y;
       y += repeat;
-      await sleep(7); // pace the BLE queue + yield to the UI
-
-      // Flush/sync point: let the printer commit received rows and pace us. On a
-      // no-response BLE link this stops the row buffer from overflowing (blank page).
-      if (y >= nextCheck) {
-        await this.checkLine(y - 1);
-        nextCheck += CHECK_EVERY;
-      }
       if (Math.floor(prev / 64) !== Math.floor(y / 64)) this.log(`row ${y}/${img.height}`);
     }
-    await this.checkLine(img.height - 1); // final flush
     this.log(`sent ${img.height} rows`);
 
     await this.send(T.PAGE_END, [1]);
@@ -184,13 +191,5 @@ export class NiimbotClient {
     }
     await this.send(T.PRINT_END, [1]);
     this.log("print done");
-  }
-
-  // Flush/receipt sync: tells the B1 to commit rows up to `line`, waits for its
-  // ack so we don't overrun the printer's row buffer.
-  private async checkLine(line: number): Promise<void> {
-    await this.t.write(new NiimbotPacket(T.CHECK_LINE, Uint8Array.from([...u16(line), 1])).toBytes());
-    const ack = await this.waitFor(RESP_CHECK, 800);
-    this.log(`checkline ${line} ${ack ? "ack" : "(no ack)"}`);
   }
 }

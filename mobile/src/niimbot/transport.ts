@@ -86,6 +86,17 @@ export class BleTransport {
     }
   }
 
+  // Acknowledged write — the peripheral confirms each write, giving guaranteed
+  // delivery + flow control for bulk image data. Throws if the characteristic
+  // doesn't support write-with-response (caller falls back to write()).
+  async writeAck(bytes: Uint8Array): Promise<void> {
+    if (!this.device) throw new Error("not connected");
+    for (let i = 0; i < bytes.length; i += this.chunk) {
+      const slice = bytes.subarray(i, i + this.chunk);
+      await this.device.writeCharacteristicWithResponseForService(SERVICE, CHAR, fromByteArray(slice));
+    }
+  }
+
   async disconnect(): Promise<void> {
     try {
       if (this.device) await this.device.cancelConnection();
