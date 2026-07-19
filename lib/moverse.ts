@@ -470,3 +470,41 @@ export async function handleBoxUpdate(req: Request, c: Cfg): Promise<Response> {
   if (!resp.ok) throw new Error(`box_update_failed_${resp.status}`);
   return json({ ok: true });
 }
+
+/* ---------------- /item-delete, /box-delete ---------------- */
+
+// Delete an item record by its Airtable id.
+export async function handleItemDelete(req: Request, c: Cfg): Promise<Response> {
+  const { itemId } = (await req.json()) as { itemId?: string };
+  if (!itemId) return json({ error: "missing_item" }, 400);
+  const resp = await fetch(`${airtableApi(c, c.itemsTable)}/${itemId}`, {
+    method: "DELETE",
+    headers: authHeaders(c),
+  });
+  if (!resp.ok) throw new Error(`item_delete_failed_${resp.status}`);
+  return json({ ok: true });
+}
+
+// Delete a box by its code. Items in it keep existing (they just lose the link).
+export async function handleBoxDelete(req: Request, c: Cfg): Promise<Response> {
+  const { boxCode } = (await req.json()) as { boxCode?: string };
+  if (!boxCode || !boxCode.trim()) return json({ error: "missing_box" }, 400);
+
+  const safe = boxCode.trim().replace(/'/g, "\\'");
+  const filter = encodeURIComponent(`{Box Code}='${safe}'`);
+  const found = await fetch(
+    `${airtableApi(c, c.boxesTable)}?maxRecords=1&filterByFormula=${filter}`,
+    { headers: authHeaders(c) },
+  );
+  if (!found.ok) throw new Error(`box_find_failed_${found.status}`);
+  const data = (await found.json()) as { records?: Array<{ id: string }> };
+  const rec = data.records?.[0];
+  if (!rec) return json({ ok: true, deleted: false });
+
+  const resp = await fetch(`${airtableApi(c, c.boxesTable)}/${rec.id}`, {
+    method: "DELETE",
+    headers: authHeaders(c),
+  });
+  if (!resp.ok) throw new Error(`box_delete_failed_${resp.status}`);
+  return json({ ok: true, deleted: true });
+}

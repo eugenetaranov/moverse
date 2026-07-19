@@ -7,6 +7,8 @@
     { "source": "/boxes", "destination": "/api/boxes" },
     { "source": "/items", "destination": "/api/items" },
     { "source": "/item-update", "destination": "/api/item-update" },
-    { "source": "/box-update", "destination": "/api/box-update" }
+    { "source": "/box-update", "destination": "/api/box-update" },
+    { "source": "/item-delete", "destination": "/api/item-delete" },
+    { "source": "/box-delete", "destination": "/api/box-delete" }
   ]
 }
