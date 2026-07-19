@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -71,17 +71,26 @@ export default function Settings() {
   const [savedExtra, setSavedExtra] = useState("");
   const extraDirty = boxExtra !== savedExtra;
   const [boxQr, setBoxQr] = useState<BoxQrContent>(DEFAULT_BOX_QR);
-  const [sizeSavedId, setSizeSavedId] = useState<string | null>(null);
-  const sizeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Live per-printer size edits (by device id). A printer's draft falls back to
+  // its saved size; editing updates the draft, and Save commits it.
+  const [sizeDraft, setSizeDraft] = useState<Record<string, LabelSize>>({});
   const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
 
-  // Persist a printer's label size and briefly flag it as saved (the fields
-  // commit on blur, so without this the save is invisible).
-  function changeLabelSize(id: string, size: LabelSize) {
-    printers.setLabelSize(id, size);
-    setSizeSavedId(id);
-    if (sizeSaveTimer.current) clearTimeout(sizeSaveTimer.current);
-    sizeSaveTimer.current = setTimeout(() => setSizeSavedId(null), 1800);
+  function editSize(id: string, current: LabelSize, patch: Partial<LabelSize>) {
+    setSizeDraft((prev) => ({ ...prev, [id]: { ...current, ...patch } }));
+  }
+  function saveSize(id: string, draft: LabelSize) {
+    const clamped: LabelSize = {
+      widthMm: Math.min(120, Math.max(5, draft.widthMm || 0)),
+      heightMm: Math.min(120, Math.max(5, draft.heightMm || 0)),
+    };
+    printers.setLabelSize(id, clamped);
+    setSizeDraft((prev) => {
+      const next = { ...prev };
+      delete next[id]; // draft now equals the saved size
+      return next;
+    });
+    log(`label size saved: ${clamped.widthMm}×${clamped.heightMm}mm`);
   }
 
   useEffect(() => {
@@ -278,38 +287,56 @@ export default function Settings() {
                 </View>
               ) : null}
 
-              <View style={styles.roleBlock}>
-                <View style={styles.sizeHead}>
-                  <Text style={styles.tuneLabel}>Label size (mm)</Text>
-                  {sizeSavedId === mp.id ? (
-                    <View style={styles.savedTag}>
-                      <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
-                      <Text style={styles.savedTagText}>Saved</Text>
+              {(() => {
+                const draft = sizeDraft[mp.id] ?? mp.labelSize;
+                const dirty =
+                  draft.widthMm !== mp.labelSize.widthMm || draft.heightMm !== mp.labelSize.heightMm;
+                return (
+                  <View style={styles.roleBlock}>
+                    <View style={styles.sizeHead}>
+                      <Text style={styles.tuneLabel}>Label size (mm)</Text>
+                      {dirty ? (
+                        <View style={styles.savedTag}>
+                          <Ionicons name="ellipse-outline" size={13} color={colors.warning} />
+                          <Text style={[styles.savedTagText, { color: colors.warning }]}>Unsaved</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.savedTag}>
+                          <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                          <Text style={styles.savedTagText}>Saved</Text>
+                        </View>
+                      )}
                     </View>
-                  ) : null}
-                </View>
-                <View style={styles.row}>
-                  <Field
-                    label="Width"
-                    value={mp.labelSize.widthMm}
-                    onChange={(n) => changeLabelSize(mp.id, { ...mp.labelSize, widthMm: n })}
-                  />
-                  <Field
-                    label="Height"
-                    value={mp.labelSize.heightMm}
-                    onChange={(n) => changeLabelSize(mp.id, { ...mp.labelSize, heightMm: n })}
-                  />
-                </View>
-                <View style={styles.formatRow}>
-                  <Ionicons
-                    name={fitsQr(mp.labelSize) ? "qr-code-outline" : "text-outline"}
-                    size={15}
-                    color={colors.accent}
-                  />
-                  <Text style={styles.format}>{fitsQr(mp.labelSize) ? "QR code + text" : "Text only"}</Text>
-                  <Text style={styles.headHint}>· head {Math.round(mp.model.widthPx / 8)}mm max</Text>
-                </View>
-              </View>
+                    <View style={styles.row}>
+                      <SizeField
+                        label="Width"
+                        value={draft.widthMm}
+                        onChange={(n) => editSize(mp.id, draft, { widthMm: n })}
+                      />
+                      <SizeField
+                        label="Height"
+                        value={draft.heightMm}
+                        onChange={(n) => editSize(mp.id, draft, { heightMm: n })}
+                      />
+                    </View>
+                    <View style={styles.formatRow}>
+                      <Ionicons
+                        name={fitsQr(draft) ? "qr-code-outline" : "text-outline"}
+                        size={15}
+                        color={colors.accent}
+                      />
+                      <Text style={styles.format}>{fitsQr(draft) ? "QR code + text" : "Text only"}</Text>
+                      <Text style={styles.headHint}>· head {Math.round(mp.model.widthPx / 8)}mm max</Text>
+                    </View>
+                    {dirty ? (
+                      <>
+                        <View style={{ height: space.sm }} />
+                        <Button title="Save size" icon="save-outline" tone="accent" onPress={() => saveSize(mp.id, draft)} />
+                      </>
+                    ) : null}
+                  </View>
+                );
+              })()}
 
               <View style={[styles.row, { marginTop: space.md }]}>
                 <Button
@@ -501,7 +528,9 @@ export default function Settings() {
 
 // Free-edit numeric field: local string so the value can be cleared/retyped;
 // commits a clamped number on blur.
-function Field({
+// Live numeric field: reports every valid change immediately (no blur needed),
+// so the size draft always reflects what's typed. Clamping happens on Save.
+function SizeField({
   label,
   value,
   onChange,
@@ -510,25 +539,13 @@ function Field({
   value: number;
   onChange: (n: number) => void;
 }) {
-  const [text, setText] = useState(String(value));
-  const editing = useRef(false);
-  useEffect(() => {
-    if (!editing.current) setText(String(value));
-  }, [value]);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextField
         keyboardType="number-pad"
-        value={text}
-        onFocus={() => (editing.current = true)}
-        onChangeText={(v) => setText(v.replace(/[^0-9]/g, ""))}
-        onBlur={() => {
-          editing.current = false;
-          const n = Math.min(120, Math.max(5, parseInt(text || "0", 10) || 0));
-          onChange(n);
-          setText(String(n));
-        }}
+        value={String(value)}
+        onChangeText={(v) => onChange(parseInt(v.replace(/[^0-9]/g, "") || "0", 10))}
       />
     </View>
   );
