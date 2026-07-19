@@ -173,9 +173,11 @@ export class NiimbotClient {
           isVoid = false;
           break;
         }
-      // Merge identical consecutive rows into one packet's repeat count.
+      // Merge identical consecutive rows into one packet's repeat count. The
+      // repeat is a single byte, so cap at 255 — >255 truncates to 0 (invalid
+      // packet) and the print stops partway.
       let repeat = 1;
-      while (y + repeat < img.height) {
+      while (y + repeat < img.height && repeat < 255) {
         const next = img.data.subarray((y + repeat) * bpr, (y + repeat + 1) * bpr);
         let same = true;
         for (let i = 0; i < bpr; i++)
