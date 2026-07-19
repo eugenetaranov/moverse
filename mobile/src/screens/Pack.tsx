@@ -39,11 +39,12 @@ import {
   LabelSize,
   PrintTuning,
   fitsQr,
+  loadBoxExtra,
   loadLabelSize,
   loadTuning,
 } from "../labelSettings";
-import { printer } from "../niimbot/connection";
-import { renderLabel } from "../niimbot/label";
+import { printers } from "../niimbot/connection";
+import { renderLabel, renderBoxLabel } from "../niimbot/label";
 import { reserveCode, seedReservation } from "../reservation";
 import { Box, loadInventory } from "../inventory";
 import { colors, radius, space, type as t, HIT } from "../theme";
@@ -71,6 +72,17 @@ type Screen = "home" | "capture" | "photo" | "scanItem" | "scanBox" | "setBox" |
 type PrintStatus = "idle" | "printing" | "done" | "failed" | "noprinter";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
+// Request the Bluetooth permissions needed to scan/connect a printer.
+async function requestBlePerms(): Promise<boolean> {
+  if (Platform.OS !== "android") return true;
+  const perms =
+    Platform.Version >= 31
+      ? [PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT]
+      : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+  const res = await PermissionsAndroid.requestMultiple(perms as any);
+  return Object.values(res).every((v) => v === PermissionsAndroid.RESULTS.GRANTED);
+}
+
 export default function Pack() {
   const navigation = useNavigation<NativeStackNavigationProp<PackStackParamList, "PackHome">>();
   const [permission, requestPermission] = useCameraPermissions();
@@ -79,6 +91,7 @@ export default function Pack() {
   const [mode, setModeState] = useState<LabelingMode>(DEFAULT_MODE);
   const [labelSize, setLabelSize] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
+  const [boxExtra, setBoxExtra] = useState("");
   const [printStatus, setPrintStatus] = useState<PrintStatus>("idle");
 
   const [screen, setScreen] = useState<Screen>("home");
@@ -104,8 +117,10 @@ export default function Pack() {
     loadMode().then(setModeState);
     loadLabelSize().then(setLabelSize);
     loadTuning().then(setTuning);
+    loadBoxExtra().then(setBoxExtra);
     void seedReservation();
-    return printer.subscribe(() => force((n) => n + 1));
+    void printers.reconnectRemembered();
+    return printers.subscribe(() => force((n) => n + 1));
   }, []);
   useEffect(() => {
     if (screen === "home") {
@@ -205,21 +220,11 @@ export default function Pack() {
   async function connectPrinter() {
     setBusy(true);
     try {
-      if (Platform.OS === "android") {
-        const perms =
-          Platform.Version >= 31
-            ? [
-                PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-                PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-              ]
-            : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
-        const res = await PermissionsAndroid.requestMultiple(perms as any);
-        if (!Object.values(res).every((v) => v === PermissionsAndroid.RESULTS.GRANTED)) {
-          Alert.alert("Bluetooth needed", "Grant Bluetooth permission to connect the printer.");
-          return;
-        }
+      if (!(await requestBlePerms())) {
+        Alert.alert("Bluetooth needed", "Grant Bluetooth permission to connect the printer.");
+        return;
       }
-      await printer.connect("b1");
+      await printers.connectFirstAvailable();
       await printLabel();
     } catch (e) {
       Alert.alert("Couldn't connect", String((e as Error)?.message ?? e));
@@ -230,12 +235,15 @@ export default function Pack() {
 
   async function printLabel(code = draft.itemCode) {
     if (!code) return;
-    if (!printer.connected || !printer.client) {
+    const p = printers.printerForKind("item");
+    if (!p) {
       setPrintStatus("noprinter");
       buzzErr();
       Alert.alert(
-        "Printer not connected",
-        `Can't print label ${code}. Connect the printer to print it, or write the code on the item by hand.`,
+        printers.connected ? "No printer for item labels" : "Printer not connected",
+        printers.connected
+          ? `No connected printer is set to print item labels. Assign one in Settings, or write ${code} on the item by hand.`
+          : `Can't print label ${code}. Connect a printer to print it, or write the code on the item by hand.`,
         [
           { text: "Connect & print", onPress: () => void connectPrinter() },
           { text: "Write by hand" },
@@ -246,7 +254,7 @@ export default function Pack() {
     }
     setPrintStatus("printing");
     try {
-      await printer.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
+      await p.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
       buzzOk();
       setPrintStatus("done");
     } catch {
@@ -261,6 +269,55 @@ export default function Pack() {
           { text: "Cancel", style: "cancel" },
         ],
       );
+    }
+  }
+
+  // Print a box label (code + QR/text + saved extra text) for a box being set.
+  // Routes to the printer assigned box labels; falls back to a hand-write prompt.
+  async function printBoxLabel(code: string) {
+    const trimmed = code.trim();
+    if (!trimmed) return;
+    const p = printers.printerForKind("box");
+    if (!p) {
+      Alert.alert(
+        printers.connected ? "No printer for box labels" : "Printer not connected",
+        printers.connected
+          ? `No connected printer is set to print box labels. Assign one in Settings, or write ${trimmed} on the box by hand.`
+          : `Connect a printer to print ${trimmed}, or write it on the box by hand.`,
+        [
+          { text: "Connect & print", onPress: () => void connectAndPrintBox(trimmed) },
+          { text: "Write by hand" },
+          { text: "Cancel", style: "cancel" },
+        ],
+      );
+      return;
+    }
+    try {
+      await p.client.printImage(renderBoxLabel(trimmed, boxExtra, labelSize), tuning.density, tuning.labelType);
+      buzzOk();
+    } catch {
+      buzzErr();
+      Alert.alert("Print failed", `Couldn't print box label ${trimmed}. Retry, or write it by hand.`, [
+        { text: "Retry", onPress: () => void printBoxLabel(trimmed) },
+        { text: "Write by hand" },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  }
+
+  async function connectAndPrintBox(code: string) {
+    setBusy(true);
+    try {
+      if (Platform.OS === "android" && !(await requestBlePerms())) {
+        Alert.alert("Bluetooth needed", "Grant Bluetooth permission to connect the printer.");
+        return;
+      }
+      await printers.connectFirstAvailable();
+      await printBoxLabel(code);
+    } catch (e) {
+      Alert.alert("Couldn't connect", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -370,7 +427,12 @@ export default function Pack() {
     );
   if (screen === "setBox")
     return (
-      <SetBox onSet={applyBox} onScan={() => setScreen("scanBox")} onCancel={() => setScreen("home")} />
+      <SetBox
+        onSet={applyBox}
+        onScan={() => setScreen("scanBox")}
+        onCancel={() => setScreen("home")}
+        onPrint={mode === "assign" ? (code) => void printBoxLabel(code) : undefined}
+      />
     );
   if (screen === "writeCode")
     return (
@@ -420,7 +482,7 @@ export default function Pack() {
                   : ""}
         </Text>
         <View style={{ height: space.md }} />
-        {printer.connected ? (
+        {printers.printerForKind("item") ? (
           <SecondaryButton
             title={printStatus === "failed" ? "Retry print" : "Print again"}
             icon="print-outline"
@@ -738,14 +800,19 @@ function SetBox({
   onSet,
   onScan,
   onCancel,
+  onPrint,
 }: {
   onSet: (code: string) => void;
   onScan: () => void;
   onCancel: () => void;
+  onPrint?: (code: string) => void;
 }) {
   const [text, setText] = useState("");
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [open, setOpen] = useState(false);
+  const typed = text.trim();
+  // A "new" box is one that isn't already in inventory — that's when a label is worth printing.
+  const isNewBox = typed !== "" && !boxes.some((b) => b.boxCode.toLowerCase() === typed.toLowerCase());
   useEffect(() => {
     loadInventory(false)
       .then((inv) => setBoxes(inv.boxes))
@@ -804,7 +871,18 @@ function SetBox({
         autoCorrect={false}
       />
       <View style={{ height: space.md }} />
-      <PrimaryButton title="Set box" onPress={() => onSet(text)} disabled={text.trim() === ""} style={styles.stretchBtn} />
+      <PrimaryButton title="Set box" onPress={() => onSet(text)} disabled={typed === ""} style={styles.stretchBtn} />
+      {onPrint && isNewBox ? (
+        <>
+          <View style={{ height: space.sm }} />
+          <SecondaryButton
+            title="Print box label"
+            icon="print-outline"
+            onPress={() => onPrint(typed)}
+            style={styles.stretchBtn}
+          />
+        </>
+      ) : null}
       <View style={{ height: space.sm }} />
       <SecondaryButton title="Scan a box label" icon="qr-code-outline" onPress={onScan} style={styles.stretchBtn} />
       <View style={{ height: space.sm }} />

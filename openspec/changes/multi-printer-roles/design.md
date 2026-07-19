@@ -102,11 +102,17 @@ printer, role implicitly `any`). This keeps the 90% case identical to today.
 
 ## Backward-compatible print sites
 
-Two call sites use the old global client and must move to routing:
+Print sites route by kind instead of using the old global client:
 - `Pack.tsx` item assign/print → `printers.printerForKind("item")`.
-- `Settings.tsx` box-label print → `printers.printerForKind("box")`.
-- `Settings.tsx` "Print test" → prints on a chosen/So-far-selected printer (test is
-  per-device, so it targets the printer whose row the button sits in).
+- `Pack.tsx` **add-a-new-box** flow (`SetBox`) → `printers.printerForKind("box")`.
+  Box-label printing lives where a box is created (a "Print box label" action on a
+  newly-typed box code), NOT in Settings — Settings only holds the persisted extra
+  text. (Revised from the original "Settings box-label print"; printing a label to
+  stick on a physical box belongs in the box flow.)
+- `Settings.tsx` "Print test" → per-device: targets the printer whose row the button
+  sits in.
+- `Settings.tsx` Box labels section → just the persisted extra text with an explicit
+  Save button (no ad-hoc print-by-code control).
 
 Each guards `=== null` and shows the kind-aware recovery alert.
 

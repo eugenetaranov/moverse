@@ -1,6 +1,7 @@
-import { BleManager, Device } from "react-native-ble-plx";
+import { Device } from "react-native-ble-plx";
 import { fromByteArray, toByteArray } from "base64-js";
 import { NiimbotPacket, PacketReassembler } from "./packet";
+import { bleManager } from "./ble";
 
 // Most NIIMBOT printers expose this service + a single WRITE_NO_RESPONSE/NOTIFY
 // characteristic. Ref: printers.niim.blue.
@@ -9,11 +10,48 @@ const CHAR = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f";
 
 type Log = (s: string) => void;
 
-// BLE transport over react-native-ble-plx. Connects by name match (the service
-// is not always in the advertisement), streams notifications through the
-// reassembler, and chunks writes to the negotiated MTU.
+// A printer found during a scan.
+export interface PrinterCandidate {
+  id: string; // BLE peripheral / address — stable key
+  name: string;
+  rssi: number; // signal strength; higher (closer to 0) is stronger
+}
+
+// Scan for Niimbot printers and return the candidate set (deduped by id, sorted
+// by RSSI strongest-first) instead of grabbing the first match. Uses the shared
+// BleManager so it composes with already-connected printers.
+export async function scanPrinters(timeoutMs = 6000, log: Log = () => {}): Promise<PrinterCandidate[]> {
+  const mgr = bleManager();
+  const found = new Map<string, PrinterCandidate>();
+  return new Promise<PrinterCandidate[]>((resolve, reject) => {
+    const finish = () => {
+      mgr.stopDeviceScan();
+      resolve([...found.values()].sort((a, b) => b.rssi - a.rssi));
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    mgr.startDeviceScan(null, { allowDuplicates: false }, (error, dev) => {
+      if (error) {
+        clearTimeout(timer);
+        mgr.stopDeviceScan();
+        reject(error);
+        return;
+      }
+      const name = (dev?.name ?? dev?.localName ?? "").toLowerCase();
+      if (dev && name && (name.includes("niimbot") || name.includes("b1") || name.includes("d11"))) {
+        if (!found.has(dev.id)) log(`found ${dev.name ?? dev.localName ?? dev.id}`);
+        found.set(dev.id, {
+          id: dev.id,
+          name: dev.name ?? dev.localName ?? dev.id,
+          rssi: dev.rssi ?? -999,
+        });
+      }
+    });
+  });
+}
+
+// BLE transport over react-native-ble-plx. Streams notifications through the
+// reassembler and chunks writes to the negotiated MTU. One transport per printer.
 export class BleTransport {
-  private manager: BleManager | null = null;
   private device: Device | null = null;
   private reasm = new PacketReassembler();
   private chunk = 20;
@@ -26,40 +64,54 @@ export class BleTransport {
     this.listeners.push(cb);
   }
 
+  // Connect to a specific, already-discovered device by its BLE id. Used by the
+  // manager to add printers one at a time without disturbing existing ones.
+  async connectById(deviceId: string): Promise<string> {
+    const mgr = bleManager();
+    const connected = await mgr.connectToDevice(deviceId, { requestMTU: 200 });
+    return this.attach(connected);
+  }
+
   // nameMatch: substring to identify the printer (default matches B1/NIIMBOT).
+  // Legacy first-match connect, retained for callers that don't pick a device.
   async connect(nameMatch = "b1"): Promise<string> {
-    this.manager = new BleManager();
+    const mgr = bleManager();
     const wanted = nameMatch.toLowerCase();
 
     const device = await new Promise<Device>((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.manager?.stopDeviceScan();
+        mgr.stopDeviceScan();
         reject(new Error("scan timeout — printer not found"));
       }, 15000);
-      this.manager!.startDeviceScan(null, { allowDuplicates: false }, (error, dev) => {
+      mgr.startDeviceScan(null, { allowDuplicates: false }, (error, dev) => {
         if (error) {
           clearTimeout(timer);
-          this.manager?.stopDeviceScan();
+          mgr.stopDeviceScan();
           reject(error);
           return;
         }
         const name = (dev?.name ?? dev?.localName ?? "").toLowerCase();
         if (dev && name && (name.includes(wanted) || name.includes("niimbot"))) {
           clearTimeout(timer);
-          this.manager?.stopDeviceScan();
+          mgr.stopDeviceScan();
           resolve(dev);
         }
       });
     });
     this.log(`found ${device.name ?? device.localName ?? device.id}`);
-
     const connected = await device.connect({ requestMTU: 200 });
+    return this.attach(connected);
+  }
+
+  // Finish setup on a connected device: discover services, size the MTU chunk,
+  // wire disconnect + notifications. Shared by connect() and connectById().
+  private async attach(connected: Device): Promise<string> {
     await connected.discoverAllServicesAndCharacteristics();
     this.chunk = Math.max(20, (connected.mtu ?? 23) - 3);
     this.device = connected;
     this.log(`connected, mtu=${connected.mtu ?? "?"}`);
 
-    // The B1 idle-powers-off (drops BLE). Track it so state doesn't go stale.
+    // Niimbot printers idle-power-off (drop BLE). Track it so state doesn't go stale.
     connected.onDisconnected(() => {
       this.log("printer disconnected");
       this.device = null;
@@ -79,7 +131,11 @@ export class BleTransport {
       }
     });
 
-    return device.name ?? device.id;
+    return connected.name ?? connected.id;
+  }
+
+  get deviceId(): string | null {
+    return this.device?.id ?? null;
   }
 
   async write(bytes: Uint8Array): Promise<void> {
@@ -112,7 +168,6 @@ export class BleTransport {
       // ignore
     }
     this.device = null;
-    this.manager?.destroy();
-    this.manager = null;
+    // The BleManager is shared app-wide (other printers may use it) — don't destroy it.
   }
 }

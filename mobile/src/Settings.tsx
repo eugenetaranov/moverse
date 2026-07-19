@@ -11,9 +11,9 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { printer } from "./niimbot/connection";
+import { ManagedPrinter, printers } from "./niimbot/connection";
+import { PrinterRole, ROLE_LABELS, ROLE_ORDER } from "./niimbot/roles";
 import { makeTestImage } from "./niimbot/testImage";
-import { renderBoxLabel } from "./niimbot/label";
 import {
   DEFAULT_LABEL,
   DEFAULT_TUNING,
@@ -58,43 +58,34 @@ export default function Settings() {
   const [lines, setLines] = useState<string[]>([]);
   const [logOpen, setLogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [printing, setPrinting] = useState(false);
+  const [printingId, setPrintingId] = useState<string | null>(null);
+  const printing = printingId !== null;
   const [, force] = useState(0);
   const [mode, setMode] = useState<LabelingMode>("assign");
   const [label, setLabel] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
   const [boxExtra, setBoxExtra] = useState("");
-  const [boxLabelCode, setBoxLabelCode] = useState("");
+  const [savedExtra, setSavedExtra] = useState("");
+  const extraDirty = boxExtra !== savedExtra;
   const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
 
   useEffect(() => {
     loadMode().then(setMode);
     loadLabelSize().then(setLabel);
     loadTuning().then(setTuning);
-    loadBoxExtra().then(setBoxExtra);
-    printer.log = log;
-    return printer.subscribe(() => force((n) => n + 1));
+    loadBoxExtra().then((v) => {
+      setBoxExtra(v);
+      setSavedExtra(v);
+    });
+    printers.log = log;
+    void printers.reconnectRemembered();
+    return printers.subscribe(() => force((n) => n + 1));
   }, []);
 
-  function updateBoxExtra(t: string) {
-    setBoxExtra(t);
-    void saveBoxExtra(t);
-  }
-
-  async function printBoxLabel() {
-    if (!printer.client) return;
-    const code = boxLabelCode.trim();
-    if (!code) return;
-    setPrinting(true);
-    try {
-      log(`printing box label ${code}…`);
-      await printer.client.printImage(renderBoxLabel(code, boxExtra, label), tuning.density, tuning.labelType);
-      log("box label printed");
-    } catch (e) {
-      log(`box print failed: ${String((e as Error)?.message ?? e)}`);
-    } finally {
-      setPrinting(false);
-    }
+  function saveExtra() {
+    void saveBoxExtra(boxExtra);
+    setSavedExtra(boxExtra);
+    log("box label extra text saved");
   }
 
   function updateTuning(patch: Partial<PrintTuning>) {
@@ -108,10 +99,10 @@ export default function Settings() {
   function pickMode(m: LabelingMode) {
     setMode(m);
     void saveMode(m);
-    // Printing only applies to "assign" — drop any printer link otherwise.
-    if (m !== "assign" && printer.connected) {
-      void printer.disconnect();
-      log("printer disconnected (not used in this mode)");
+    // Printing only applies to "assign" — drop all printer links otherwise.
+    if (m !== "assign" && printers.connected) {
+      void printers.disconnectAll();
+      log("printers disconnected (not used in this mode)");
     }
   }
   function updateLabel(patch: Partial<LabelSize>) {
@@ -122,59 +113,69 @@ export default function Settings() {
     });
   }
 
-  async function connect() {
+  // Connect an additional printer (scan → first not-yet-connected device).
+  async function addPrinter() {
     setBusy(true);
     try {
       if (!(await requestBlePermissions())) {
         log("permissions denied");
         return;
       }
-      log("scanning for printer…");
-      await printer.connect("b1");
-      log(`connected: ${printer.name}`);
+      log("scanning for a printer…");
+      const mp = await printers.connectFirstAvailable();
+      log(`connected: ${mp.name} (${mp.model.label})`);
     } catch (e) {
       log(`connect failed: ${String((e as Error)?.message ?? e)}`);
     } finally {
       setBusy(false);
     }
   }
-  async function disconnect() {
+  async function disconnectOne(mp: ManagedPrinter) {
     setBusy(true);
     try {
-      await printer.disconnect();
-      log("disconnected");
+      await printers.forget(mp.id);
+      log(`disconnected ${mp.name}`);
     } finally {
       setBusy(false);
     }
   }
-  async function printTest() {
-    if (!printer.client) return;
-    setPrinting(true);
+  async function printTestOn(mp: ManagedPrinter) {
+    setPrintingId(mp.id);
     try {
       const { widthPx, heightPx } = labelPx(label);
-      log(`printing test ${widthPx}x${heightPx} (d${tuning.density}, type ${tuning.labelType})…`);
-      await printer.client.printImage(makeTestImage(widthPx, heightPx), tuning.density, tuning.labelType);
+      log(`printing test ${widthPx}x${heightPx} on ${mp.name} (d${tuning.density}, type ${tuning.labelType})…`);
+      await mp.client.printImage(makeTestImage(widthPx, heightPx), tuning.density, tuning.labelType);
       log("print done");
     } catch (e) {
       log(`print stopped: ${String((e as Error)?.message ?? e)}`);
     } finally {
-      setPrinting(false);
+      setPrintingId(null);
     }
   }
-  async function cancelPrint() {
-    printer.client?.cancel();
+  async function cancelPrintOn(mp: ManagedPrinter) {
+    mp.client.cancel();
     log("cancelling…");
     try {
-      await printer.disconnect();
+      await printers.disconnect(mp.id);
     } catch {
       // ignore
     }
-    setPrinting(false);
+    setPrintingId(null);
   }
 
   async function copyLog() {
     await Clipboard.setStringAsync(lines.join("\n"));
     log("(log copied to clipboard)");
+  }
+
+  // Coverage guidance for the role assignments (only meaningful with a printer).
+  const uncovered = printers.uncoveredKinds();
+  const anyCount = printers.list().filter((p) => p.role === "any").length;
+  let coverageHint = "";
+  if (printers.list().length > 0 && uncovered.length) {
+    coverageHint = `No printer is set to print ${uncovered.join(" or ")} labels.`;
+  } else if (printers.list().length > 1 && anyCount > 1) {
+    coverageHint = "Two printers print “Any” — jobs go to one of them. Assign roles to control which prints what.";
   }
 
   return (
@@ -211,36 +212,66 @@ export default function Settings() {
         </Text>
       ) : (
         <>
-      {/* Printer */}
-      <SectionHeader>Printer (NIIMBOT B1)</SectionHeader>
-      <View style={styles.stateRow}>
-        <Ionicons
-          name={printer.connected ? "bluetooth" : "bluetooth-outline"}
-          size={18}
-          color={printer.connected ? colors.accent : colors.mutedFg}
-        />
-        <Text style={styles.state}>
-          {printer.connected ? `Connected: ${printer.name}` : "Not connected"}
-        </Text>
-      </View>
-      <View style={styles.row}>
-        {printer.connected ? (
-          <Button title="Disconnect" onPress={disconnect} disabled={busy || printing} style={styles.flexBtn} />
-        ) : (
-          <Button title="Connect" icon="bluetooth" tone="accent" onPress={connect} disabled={busy} style={styles.flexBtn} />
-        )}
-        {printing ? (
-          <Button title="Cancel print" icon="close" tone="danger" onPress={cancelPrint} style={styles.flexBtn} />
-        ) : (
-          <Button
-            title="Print test"
-            icon="print-outline"
-            onPress={printTest}
-            disabled={!printer.connected || busy}
-            style={styles.flexBtn}
-          />
-        )}
-      </View>
+      {/* Printers */}
+      <SectionHeader>Printers</SectionHeader>
+      {printers.list().length === 0 ? (
+        <Text style={styles.hint}>No printer connected.</Text>
+      ) : (
+        printers.list().map((mp) => {
+          const isPrinting = printingId === mp.id;
+          const multi = printers.list().length > 1;
+          return (
+            <View key={mp.id} style={styles.printerCard}>
+              <View style={styles.stateRow}>
+                <Ionicons name="print" size={18} color={colors.accent} />
+                <Text style={styles.state}>{mp.model.label}</Text>
+                {!mp.model.verified ? <Text style={styles.unverified}>untested</Text> : null}
+              </View>
+              <Text style={styles.printerName}>{mp.name}</Text>
+
+              {multi ? (
+                <View style={styles.roleBlock}>
+                  <Text style={styles.tuneLabel}>Prints</Text>
+                  <Segmented
+                    options={ROLE_ORDER.map((r) => ({ value: r, label: ROLE_LABELS[r] }))}
+                    value={mp.role}
+                    onChange={(v) => printers.setRole(mp.id, v as PrinterRole)}
+                  />
+                </View>
+              ) : null}
+
+              <View style={[styles.row, { marginTop: space.md }]}>
+                <Button
+                  title="Disconnect"
+                  onPress={() => disconnectOne(mp)}
+                  disabled={busy || isPrinting}
+                  style={styles.flexBtn}
+                />
+                {isPrinting ? (
+                  <Button title="Cancel print" icon="close" tone="danger" onPress={() => cancelPrintOn(mp)} style={styles.flexBtn} />
+                ) : (
+                  <Button
+                    title="Print test"
+                    icon="print-outline"
+                    onPress={() => printTestOn(mp)}
+                    disabled={busy || printing}
+                    style={styles.flexBtn}
+                  />
+                )}
+              </View>
+            </View>
+          );
+        })
+      )}
+      <View style={{ height: space.sm }} />
+      <Button
+        title={printers.list().length ? "Add another printer" : "Connect a printer"}
+        icon="add"
+        tone="accent"
+        onPress={addPrinter}
+        disabled={busy}
+      />
+      {coverageHint ? <Text style={[styles.hint, { marginTop: space.sm }]}>{coverageHint}</Text> : null}
       <TouchableOpacity
         style={styles.logMiniLink}
         onPress={() => setLogOpen(true)}
@@ -289,35 +320,24 @@ export default function Settings() {
       {/* Box labels */}
       <SectionHeader>Box labels</SectionHeader>
       <Text style={styles.hint}>
-        Box labels print the box code (QR + text, or text-only by size) plus the extra text below.
+        Printed when you add a new box — the box code (QR + text, or text-only by size) plus this
+        extra text (phone / WhatsApp / address).
       </Text>
-      <Text style={styles.fieldLabel}>Extra text (phone / WhatsApp / address)</Text>
+      <Text style={styles.fieldLabel}>Extra text on every box label</Text>
       <TextField
         multiline
         value={boxExtra}
-        onChangeText={updateBoxExtra}
+        onChangeText={setBoxExtra}
         placeholder={"e.g. Call/WhatsApp +1 555 123 4567\n123 Main St, City"}
       />
-      <View style={{ height: space.md }} />
-      <Text style={styles.fieldLabel}>Print a box label</Text>
-      <View style={styles.row}>
-        <View style={styles.flexBtn}>
-          <TextField
-            value={boxLabelCode}
-            onChangeText={setBoxLabelCode}
-            placeholder="BOX-0001"
-            autoCapitalize="characters"
-            autoCorrect={false}
-          />
-        </View>
-        <Button
-          title="Print"
-          icon="print-outline"
-          onPress={printBoxLabel}
-          disabled={!printer.connected || boxLabelCode.trim() === "" || printing}
-          style={styles.flexBtn}
-        />
-      </View>
+      <View style={{ height: space.sm }} />
+      <Button
+        title={extraDirty ? "Save extra text" : "Saved"}
+        icon={extraDirty ? "save-outline" : "checkmark"}
+        tone="accent"
+        onPress={saveExtra}
+        disabled={!extraDirty}
+      />
 
         </>
       )}
@@ -403,6 +423,22 @@ function Field({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
+  printerCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: space.md,
+    marginBottom: space.md,
+    backgroundColor: colors.surface,
+  },
+  printerName: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
+  unverified: {
+    ...t.caption,
+    color: colors.mutedFg,
+    marginLeft: space.sm,
+    fontStyle: "italic",
+  },
+  roleBlock: { marginTop: space.md },
   stateRow: { flexDirection: "row", alignItems: "center", marginBottom: space.md },
   state: { ...t.bodyStrong, color: colors.fg, marginLeft: space.sm },
   row: { flexDirection: "row", gap: space.md },
