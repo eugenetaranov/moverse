@@ -87,6 +87,49 @@ export async function saveBoxExtra(t: string): Promise<void> {
   }
 }
 
+// What a box label's QR encodes: the box code, or a URL template (with an optional
+// {code} placeholder substituted at print time). The human-readable box code always
+// prints as text regardless.
+export type BoxQrMode = "code" | "url";
+export interface BoxQrContent {
+  mode: BoxQrMode;
+  urlTemplate: string;
+}
+export const DEFAULT_BOX_QR: BoxQrContent = { mode: "code", urlTemplate: "" };
+const BOX_QR_KEY = "moverse.boxQrContent";
+
+export async function loadBoxQr(): Promise<BoxQrContent> {
+  try {
+    const raw = await AsyncStorage.getItem(BOX_QR_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && (p.mode === "code" || p.mode === "url")) {
+        return { mode: p.mode, urlTemplate: typeof p.urlTemplate === "string" ? p.urlTemplate : "" };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_BOX_QR;
+}
+
+export async function saveBoxQr(c: BoxQrContent): Promise<void> {
+  try {
+    await AsyncStorage.setItem(BOX_QR_KEY, JSON.stringify(c));
+  } catch {
+    // best effort
+  }
+}
+
+// Resolve the QR payload for a box code. URL mode substitutes {code}; without the
+// placeholder the URL is encoded as-is. Falls back to the box code.
+export function resolveBoxQrPayload(c: BoxQrContent, boxCode: string): string {
+  if (c.mode === "url" && c.urlTemplate.trim()) {
+    return c.urlTemplate.split("{code}").join(boxCode);
+  }
+  return boxCode;
+}
+
 export const DOTS_PER_MM = 8; // 203 dpi ≈ 8 px/mm
 export const HEAD_PX = 384; // widest supported printhead (B1); fallback cap
 

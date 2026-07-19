@@ -16,6 +16,9 @@ import { ManagedPrinter, ScanCancelledError, printers } from "./niimbot/connecti
 import { PrinterRole, ROLE_LABELS, ROLE_ORDER } from "./niimbot/roles";
 import { makeTestImage } from "./niimbot/testImage";
 import {
+  BoxQrContent,
+  BoxQrMode,
+  DEFAULT_BOX_QR,
   DEFAULT_TUNING,
   LABEL_TYPES,
   LabelSize,
@@ -23,8 +26,10 @@ import {
   fitsQr,
   labelPx,
   loadBoxExtra,
+  loadBoxQr,
   loadTuning,
   saveBoxExtra,
+  saveBoxQr,
   saveTuning,
 } from "./labelSettings";
 import { LabelingMode, loadMode, saveMode } from "./labelingMode";
@@ -64,6 +69,7 @@ export default function Settings() {
   const [boxExtra, setBoxExtra] = useState("");
   const [savedExtra, setSavedExtra] = useState("");
   const extraDirty = boxExtra !== savedExtra;
+  const [boxQr, setBoxQr] = useState<BoxQrContent>(DEFAULT_BOX_QR);
   const [sizeSavedId, setSizeSavedId] = useState<string | null>(null);
   const sizeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const log = (s: string) => setLines((l) => [...l.slice(-80), s]);
@@ -84,6 +90,7 @@ export default function Settings() {
       setBoxExtra(v);
       setSavedExtra(v);
     });
+    loadBoxQr().then(setBoxQr);
     printers.log = log;
     void printers.reconnectRemembered();
     return printers.subscribe(() => force((n) => n + 1));
@@ -93,6 +100,14 @@ export default function Settings() {
     void saveBoxExtra(boxExtra);
     setSavedExtra(boxExtra);
     log("box label extra text saved");
+  }
+
+  function updateBoxQr(patch: Partial<BoxQrContent>) {
+    setBoxQr((prev) => {
+      const next = { ...prev, ...patch };
+      void saveBoxQr(next);
+      return next;
+    });
   }
 
   function updateTuning(patch: Partial<PrintTuning>) {
@@ -148,6 +163,7 @@ export default function Settings() {
       const { widthPx, heightPx } = labelPx(mp.labelSize, mp.model.widthPx);
       log(`printing test ${widthPx}x${heightPx} on ${mp.name} (d${tuning.density}, type ${tuning.labelType})…`);
       await mp.client.printImage(makeTestImage(widthPx, heightPx), tuning.density, tuning.labelType);
+      printers.markTested(mp.id);
       log("print done");
     } catch (e) {
       log(`print stopped: ${String((e as Error)?.message ?? e)}`);
@@ -180,6 +196,11 @@ export default function Settings() {
   } else if (printers.list().length > 1 && anyCount > 1) {
     coverageHint = "Two printers print “Any” — jobs go to one of them. Assign roles to control which prints what.";
   }
+
+  // The QR-content choice only matters when a QR will actually print: a box-role
+  // printer with a QR-capable label that has passed a test print.
+  const boxPrinter = printers.printerForKind("box");
+  const qrEnabled = !!boxPrinter && fitsQr(boxPrinter.labelSize) && boxPrinter.testPassed;
 
   return (
     <ScrollView
@@ -369,6 +390,37 @@ export default function Settings() {
         disabled={!extraDirty}
       />
 
+      <View style={{ height: space.lg }} />
+      <Text style={styles.fieldLabel}>QR code content</Text>
+      <View pointerEvents={qrEnabled ? "auto" : "none"} style={qrEnabled ? undefined : styles.disabledBlock}>
+        <Segmented
+          options={[
+            { value: "code", label: "Box code" },
+            { value: "url", label: "Link / URL" },
+          ]}
+          value={boxQr.mode}
+          onChange={(v) => updateBoxQr({ mode: v as BoxQrMode })}
+        />
+        {boxQr.mode === "url" ? (
+          <>
+            <View style={{ height: space.sm }} />
+            <TextField
+              value={boxQr.urlTemplate}
+              onChangeText={(v) => updateBoxQr({ urlTemplate: v })}
+              placeholder="https://wa.me/15551234567?text=Box%20{code}"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Text style={styles.hint}>{"{code}"} inserts the box code into the link.</Text>
+          </>
+        ) : null}
+      </View>
+      {!qrEnabled ? (
+        <Text style={[styles.hint, { marginTop: space.xs }]}>
+          Connect a large-label box printer and run a test print to choose QR content.
+        </Text>
+      ) : null}
+
         </>
       )}
 
@@ -473,6 +525,7 @@ const styles = StyleSheet.create({
   savedTag: { flexDirection: "row", alignItems: "center", gap: 3 },
   savedTagText: { ...t.caption, color: colors.accent, fontWeight: "600" },
   headHint: { ...t.caption, color: colors.mutedFg, marginLeft: space.xs },
+  disabledBlock: { opacity: 0.45 },
   scanRow: {
     flexDirection: "row",
     alignItems: "center",

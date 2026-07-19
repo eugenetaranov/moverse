@@ -96,6 +96,7 @@ export function renderBoxLabel(
   extraText: string,
   size: LabelSize,
   maxWidthPx?: number,
+  qrPayload?: string,
 ): Bitmap {
   const { widthPx, heightPx } = labelPx(size, maxWidthPx);
   const bytesPerRow = Math.ceil(widthPx / 8);
@@ -131,7 +132,7 @@ export function renderBoxLabel(
     const midH = midBottom - midTop;
     if (midH > 24) {
       const qr = qrcode(0, "M");
-      qr.addData(boxCode);
+      qr.addData(qrPayload ?? boxCode);
       qr.make();
       const n = qr.getModuleCount();
       const scale = Math.max(1, Math.floor(Math.min(availW, midH) / n));

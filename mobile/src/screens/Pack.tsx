@@ -38,10 +38,14 @@ import {
   DEFAULT_TUNING,
   LabelSize,
   PrintTuning,
+  BoxQrContent,
+  DEFAULT_BOX_QR,
   fitsQr,
   loadBoxExtra,
+  loadBoxQr,
   loadLabelSize,
   loadTuning,
+  resolveBoxQrPayload,
 } from "../labelSettings";
 import { printers } from "../niimbot/connection";
 import { renderLabel, renderBoxLabel } from "../niimbot/label";
@@ -92,6 +96,7 @@ export default function Pack() {
   const [labelSize, setLabelSize] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
   const [boxExtra, setBoxExtra] = useState("");
+  const [boxQr, setBoxQr] = useState<BoxQrContent>(DEFAULT_BOX_QR);
   const [printStatus, setPrintStatus] = useState<PrintStatus>("idle");
 
   const [screen, setScreen] = useState<Screen>("home");
@@ -118,6 +123,7 @@ export default function Pack() {
     loadLabelSize().then(setLabelSize);
     loadTuning().then(setTuning);
     loadBoxExtra().then(setBoxExtra);
+    loadBoxQr().then(setBoxQr);
     void seedReservation();
     void printers.reconnectRemembered();
     return printers.subscribe(() => force((n) => n + 1));
@@ -293,7 +299,12 @@ export default function Pack() {
       return;
     }
     try {
-      await p.client.printImage(renderBoxLabel(trimmed, boxExtra, p.labelSize, p.model.widthPx), tuning.density, tuning.labelType);
+      const qrPayload = resolveBoxQrPayload(boxQr, trimmed);
+      await p.client.printImage(
+        renderBoxLabel(trimmed, boxExtra, p.labelSize, p.model.widthPx, qrPayload),
+        tuning.density,
+        tuning.labelType,
+      );
       buzzOk();
     } catch {
       buzzErr();

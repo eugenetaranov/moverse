@@ -23,6 +23,7 @@ export { ScanCancelledError } from "./transport";
 export class ManagedPrinter {
   role: PrinterRole = DEFAULT_ROLE;
   labelSize: LabelSize;
+  testPassed = false; // set once a test print completes without error (session only)
   constructor(
     public readonly id: string,
     public name: string,
@@ -163,6 +164,15 @@ class PrinterManager {
     this.roles[id] = role;
     void saveRoles(this.roles);
     this.emit();
+  }
+
+  // Mark that a printer completed a test print without error (session state).
+  markTested(id: string): void {
+    const mp = this.printers.get(id);
+    if (mp && !mp.testPassed) {
+      mp.testPassed = true;
+      this.emit();
+    }
   }
 
   // --- Per-printer label size ---------------------------------------------
