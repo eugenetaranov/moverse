@@ -74,6 +74,24 @@ export async function updateBox(payload: {
   if (!res.ok) throw new Error(`Update failed (${res.status})`);
 }
 
+export async function deleteItem(itemId: string): Promise<void> {
+  const res = await fetch(`${WORKER_URL}/item-delete`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ itemId }),
+  });
+  if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+}
+
+export async function deleteBox(boxCode: string): Promise<void> {
+  const res = await fetch(`${WORKER_URL}/box-delete`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ boxCode }),
+  });
+  if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+}
+
 // ---- session cache ----
 export interface Inventory {
   boxes: Box[];

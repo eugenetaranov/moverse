@@ -220,17 +220,21 @@ export function RowCard({
   leadingIcon,
   children,
   onPress,
+  onLongPress,
   accessibilityLabel,
 }: {
   leadingIcon?: IconName;
   children: React.ReactNode;
   onPress: () => void;
+  onLongPress?: () => void;
   accessibilityLabel?: string;
 }) {
   return (
     <TouchableOpacity
       style={styles.rowCard}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       activeOpacity={0.85}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}

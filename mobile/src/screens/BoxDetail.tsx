@@ -3,10 +3,10 @@ import { Alert, FlatList, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { BrowseStackParamList } from "../navTypes";
-import { Box, Item, loadInventory, updateBox } from "../inventory";
-import { PrimaryButton, Segmented, FieldLabel, TextField, LoadingState, EmptyState, ErrorState } from "../ui";
+import { Box, Item, clearInventoryCache, deleteBox, deleteItem, loadInventory, updateBox } from "../inventory";
+import { PrimaryButton, SecondaryButton, Segmented, FieldLabel, TextField, LoadingState, EmptyState, ErrorState } from "../ui";
 import { colors, space, type as t } from "../theme";
-import { ItemCard, isSuitcase, isWithMe } from "./cards";
+import { ItemRow, isSuitcase, isWithMe } from "./cards";
 
 type Props = NativeStackScreenProps<BrowseStackParamList, "BoxDetail">;
 
@@ -67,6 +67,48 @@ export default function BoxDetail({ route, navigation }: Props) {
     }
   }
 
+  function confirmDeleteBox() {
+    Alert.alert(
+      "Delete box?",
+      `Delete ${boxCode}${items.length ? ` (its ${items.length} item${items.length === 1 ? "" : "s"} keep existing)` : ""}? This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteBox(boxCode);
+              clearInventoryCache();
+              navigation.goBack();
+            } catch (e) {
+              Alert.alert("Delete failed", String((e as Error)?.message ?? e));
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function confirmDeleteItem(it: Item) {
+    Alert.alert("Delete item?", `Delete ${it.itemCode || "this item"}? This can't be undone.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteItem(it.itemId);
+            setItems((prev) => prev.filter((x) => x.itemId !== it.itemId));
+            clearInventoryCache();
+          } catch (e) {
+            Alert.alert("Delete failed", String((e as Error)?.message ?? e));
+          }
+        },
+      },
+    ]);
+  }
+
   if (status === "loading") return <LoadingState />;
   if (status === "error") return <ErrorState message={error} onRetry={() => load(true)} />;
 
@@ -79,13 +121,15 @@ export default function BoxDetail({ route, navigation }: Props) {
     <FlatList
       style={styles.container}
       data={items}
-      numColumns={2}
       keyExtractor={(it) => it.itemId}
       renderItem={({ item }) => (
-        <ItemCard item={item} onPress={() => navigation.navigate("ItemDetail", { item })} />
+        <ItemRow
+          item={item}
+          onPress={() => navigation.navigate("ItemDetail", { item })}
+          onLongPress={() => confirmDeleteItem(item)}
+        />
       )}
-      columnWrapperStyle={styles.col}
-      contentContainerStyle={styles.grid}
+      contentContainerStyle={styles.list}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <View style={styles.header}>
@@ -102,6 +146,8 @@ export default function BoxDetail({ route, navigation }: Props) {
             onPress={save}
             disabled={saving || !dirty}
           />
+          <View style={{ height: space.sm }} />
+          <SecondaryButton title="Delete box" icon="trash-outline" onPress={confirmDeleteBox} disabled={saving} />
           <Text style={styles.count}>
             {items.length} item{items.length === 1 ? "" : "s"} in this box
           </Text>
@@ -114,8 +160,7 @@ export default function BoxDetail({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  grid: { padding: space.lg, gap: space.md },
-  col: { gap: space.md },
+  list: { padding: space.lg, gap: space.md },
   header: { marginBottom: space.sm },
   count: { ...t.label, color: colors.mutedFg, marginTop: space.lg },
 });

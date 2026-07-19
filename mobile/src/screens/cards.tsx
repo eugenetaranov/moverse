@@ -56,12 +56,71 @@ export function ItemCard({ item, onPress }: { item: Item; onPress: () => void })
   );
 }
 
+// Compact table-style row for the Items list: standard thumbnail + code +
+// description + box chips. Long-press to delete.
+export function ItemRow({
+  item,
+  onPress,
+  onLongPress,
+}: {
+  item: Item;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.itemCode || "Item"}${item.description ? ", " + item.description : ""}`}
+    >
+      {item.photoThumbUrl ? (
+        <Image source={{ uri: item.photoThumbUrl }} style={styles.rowThumb} />
+      ) : (
+        <View style={[styles.rowThumb, styles.thumbEmpty]}>
+          <Ionicons name="image-outline" size={20} color={colors.mutedFg} />
+        </View>
+      )}
+      <View style={styles.rowBody}>
+        <Text style={styles.code} numberOfLines={1}>
+          {item.itemCode || "—"}
+        </Text>
+        {item.description ? (
+          <Text style={styles.desc} numberOfLines={1}>
+            {item.description}
+          </Text>
+        ) : null}
+        <View style={styles.chips}>
+          {item.boxCodes.length ? (
+            item.boxCodes.map((bc) => <Chip key={bc} icon="cube-outline" label={bc} />)
+          ) : (
+            <Text style={styles.noBox}>No box</Text>
+          )}
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.mutedFg} />
+    </TouchableOpacity>
+  );
+}
+
 // Row card for the Boxes list (built on the shared RowCard shell).
-export function BoxCard({ box, onPress }: { box: Box; onPress: () => void }) {
+export function BoxCard({
+  box,
+  onPress,
+  onLongPress,
+}: {
+  box: Box;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
   return (
     <RowCard
       leadingIcon={isSuitcase(box.type) ? "briefcase-outline" : "cube-outline"}
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityLabel={`Box ${box.boxCode}${box.name ? ", " + box.name : ""}, ${box.itemCount} items`}
     >
       <Text style={styles.boxCode} numberOfLines={1}>
@@ -96,6 +155,18 @@ const styles = StyleSheet.create({
   thumbWrap: { width: "100%", aspectRatio: 1, borderRadius: radius.sm, overflow: "hidden", marginBottom: space.sm },
   thumb: { width: "100%", height: "100%", backgroundColor: colors.muted },
   thumbEmpty: { alignItems: "center", justifyContent: "center" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: space.sm,
+  },
+  rowThumb: { width: 56, height: 56, borderRadius: radius.sm, backgroundColor: colors.muted },
+  rowBody: { flex: 1 },
   code: { ...t.bodyStrong, color: colors.fg },
   desc: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: space.sm },

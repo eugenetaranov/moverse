@@ -3,7 +3,7 @@ import { Alert, Image, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { BrowseStackParamList } from "../navTypes";
-import { Item, clearInventoryCache, updateItem } from "../inventory";
+import { Item, clearInventoryCache, deleteItem, updateItem } from "../inventory";
 import { PrimaryButton, SecondaryButton, FieldLabel, TextField, Badge, Chip } from "../ui";
 import { colors, radius, space, type as t } from "../theme";
 import { isWithMe } from "./cards";
@@ -54,6 +54,25 @@ export default function ItemDetail({ route, navigation }: Props) {
       return;
     }
     void persist({ boxCodes: [...item.boxCodes, trimmed] }, `Added to ${trimmed}.`);
+  }
+
+  function confirmDelete() {
+    Alert.alert("Delete item?", `Delete ${item.itemCode || "this item"}? This can't be undone.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteItem(item.itemId);
+            clearInventoryCache();
+            navigation.goBack();
+          } catch (e) {
+            Alert.alert("Delete failed", String((e as Error)?.message ?? e));
+          }
+        },
+      },
+    ]);
   }
 
   function removeBox(code: string) {
@@ -126,6 +145,9 @@ export default function ItemDetail({ route, navigation }: Props) {
       <View style={{ height: space.sm }} />
       <SecondaryButton title="Add / move to a box" icon="qr-code-outline" onPress={() => setScanning(true)} disabled={saving} />
       <Text style={styles.hint}>Tap a box chip to remove it. Scanning a box adds this item to it.</Text>
+
+      <View style={{ height: space.xl }} />
+      <SecondaryButton title="Delete item" icon="trash-outline" onPress={confirmDelete} disabled={saving} />
     </ScrollView>
   );
 }
