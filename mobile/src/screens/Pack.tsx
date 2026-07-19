@@ -191,6 +191,32 @@ export default function Pack() {
     }
   }
 
+  // Assign (and print, if a printer is connected) the next code without going
+  // through the full capture flow — for when a photo was added first.
+  async function assignCode() {
+    setBusy(true);
+    try {
+      const code = await reserveCode();
+      edit({ itemCode: code });
+      if (printer.connected && printer.client) {
+        try {
+          await printer.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
+          buzzOk();
+          showToast(`Printed ${code}`);
+        } catch {
+          buzzErr();
+          showToast(`Print failed — write ${code}`);
+        }
+      } else {
+        showToast(`Write ${code} on the item`);
+      }
+    } catch (e) {
+      Alert.alert("Couldn't get a code", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function doSave() {
     const code = draft.itemCode.trim();
     const box = draft.boxCode.trim();
@@ -378,10 +404,21 @@ export default function Pack() {
           <>
             <FieldLabel text="Item code" done={itemOk} />
             {mode === "assign" ? (
-              <View style={styles.chip}>
-                <Ionicons name="pricetag-outline" size={16} color={colors.mutedFg} />
-                <Text style={styles.chipText}>{draft.itemCode || "assigned when you add"}</Text>
-              </View>
+              <TouchableOpacity
+                style={styles.chip}
+                onPress={assignCode}
+                disabled={busy || draft.itemCode !== ""}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={draft.itemCode ? "pricetag-outline" : "add-circle-outline"}
+                  size={16}
+                  color={colors.mutedFg}
+                />
+                <Text style={styles.chipText}>
+                  {draft.itemCode || (busy ? "Assigning…" : "Tap to assign & print a code")}
+                </Text>
+              </TouchableOpacity>
             ) : (
               <>
                 <View style={styles.inputRow}>
@@ -434,6 +471,15 @@ export default function Pack() {
         </View>
       </ScrollView>
 
+      {!draftEmpty && !canSave && !saving ? (
+        <Text style={styles.saveHint}>
+          Add{" "}
+          {[!boxOk && "a box", needCode && !itemOk && "a code", !descOk && "a description"]
+            .filter(Boolean)
+            .join(", ")}{" "}
+          to save
+        </Text>
+      ) : null}
       <View style={styles.actionBar}>
         {draftEmpty ? (
           <PrimaryButton
@@ -657,6 +703,14 @@ const styles = StyleSheet.create({
     paddingBottom: space.xxl,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  saveHint: {
+    ...t.caption,
+    color: colors.mutedFg,
+    textAlign: "center",
+    paddingHorizontal: space.lg,
+    paddingTop: space.sm,
     backgroundColor: colors.surface,
   },
 });
