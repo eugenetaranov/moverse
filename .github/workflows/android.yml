@@ -32,6 +32,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
 
       - uses: actions/setup-java@v4
         with:
@@ -42,17 +44,30 @@ jobs:
       # the compileSdk platform / build-tools the RN build needs.
       - uses: android-actions/setup-android@v3
 
+      # Caches ~/.gradle (dependencies + wrapper dists) and wires up the Gradle
+      # build cache across runs, so builds after the first are warm.
+      - uses: gradle/actions/setup-gradle@v4
+
       - name: Install JS dependencies
-        run: npm install
+        run: npm ci
 
       - name: Generate native android/ project (expo prebuild)
         run: npx expo prebuild --platform android --no-install
 
+      # Build overrides passed on the command line (they beat the regenerated
+      # gradle.properties, so they survive every `expo prebuild`):
+      #  - reactNativeArchitectures=arm64-v8a → compile native libs + Hermes once
+      #    instead of ×4 ABIs (biggest time saver; also a smaller APK). Runs on
+      #    64-bit phones only — fine for personal sideloading.
+      #  - --parallel --build-cache → use both cores + reuse cached task outputs.
+      #  - PNG crunch off → minor win; the app ships few PNGs.
       - name: Build release APK
         working-directory: mobile/android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon --parallel --build-cache \
+            -PreactNativeArchitectures=arm64-v8a \
+            -Pandroid.enablePngCrunchInReleaseBuilds=false
 
       # Stable, human-readable name so the Release download URL never changes.
       # Also surface the app version for the Release notes. Run from the repo root
