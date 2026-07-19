@@ -38,17 +38,13 @@ import {
   DEFAULT_TUNING,
   LabelSize,
   PrintTuning,
-  BoxQrContent,
-  DEFAULT_BOX_QR,
   fitsQr,
-  loadBoxExtra,
-  loadBoxQr,
   loadLabelSize,
   loadTuning,
-  resolveBoxQrPayload,
 } from "../labelSettings";
 import { printers } from "../niimbot/connection";
-import { renderLabel, renderBoxLabel } from "../niimbot/label";
+import { renderLabel } from "../niimbot/label";
+import { printBoxLabels, NoBoxPrinter } from "../boxLabelPrint";
 import { reserveCode, seedReservation } from "../reservation";
 import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
 import { Box, loadInventory } from "../inventory";
@@ -106,8 +102,6 @@ export default function Pack() {
   const [mode, setModeState] = useState<LabelingMode>(DEFAULT_MODE);
   const [labelSize, setLabelSize] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
-  const [boxExtra, setBoxExtra] = useState("");
-  const [boxQr, setBoxQr] = useState<BoxQrContent>(DEFAULT_BOX_QR);
   const [printStatus, setPrintStatus] = useState<PrintStatus>("idle");
 
   const [screen, setScreen] = useState<Screen>("home");
@@ -133,8 +127,6 @@ export default function Pack() {
     loadMode().then(setModeState);
     loadLabelSize().then(setLabelSize);
     loadTuning().then(setTuning);
-    loadBoxExtra().then(setBoxExtra);
-    loadBoxQr().then(setBoxQr);
     void seedReservation();
     void seedBoxReservation();
     void printers.reconnectRemembered();
@@ -156,8 +148,6 @@ export default function Pack() {
       loadMode().then(setModeState);
       loadLabelSize().then(setLabelSize);
       loadTuning().then(setTuning);
-      loadBoxExtra().then(setBoxExtra);
-      loadBoxQr().then(setBoxQr);
     }, []),
   );
 
@@ -344,30 +334,24 @@ export default function Pack() {
   async function printBoxLabel(code: string) {
     const trimmed = code.trim();
     if (!trimmed) return;
-    const p = printers.printerForKind("box");
-    if (!p) {
-      Alert.alert(
-        printers.connected ? "No printer for box labels" : "Printer not connected",
-        printers.connected
-          ? `No connected printer is set to print box labels. Assign one in Settings, or write ${trimmed} on the box by hand.`
-          : `Connect a printer to print ${trimmed}, or write it on the box by hand.`,
-        [
-          { text: "Connect & print", onPress: () => void connectAndPrintBox(trimmed) },
-          { text: "Write by hand" },
-          { text: "Cancel", style: "cancel" },
-        ],
-      );
-      return;
-    }
     try {
-      const qrPayload = resolveBoxQrPayload(boxQr, trimmed);
-      await p.client.printImage(
-        renderBoxLabel(trimmed, boxExtra, p.labelSize, p.model.widthPx, qrPayload),
-        tuning.density,
-        tuning.labelType,
-      );
+      await printBoxLabels(trimmed, 1);
       buzzOk();
-    } catch {
+    } catch (e) {
+      if (e instanceof NoBoxPrinter) {
+        Alert.alert(
+          printers.connected ? "No printer for box labels" : "Printer not connected",
+          printers.connected
+            ? `No connected printer is set to print box labels. Assign one in Settings, or write ${trimmed} on the box by hand.`
+            : `Connect a printer to print ${trimmed}, or write it on the box by hand.`,
+          [
+            { text: "Connect & print", onPress: () => void connectAndPrintBox(trimmed) },
+            { text: "Write by hand" },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
+        return;
+      }
       buzzErr();
       Alert.alert("Print failed", `Couldn't print box label ${trimmed}. Retry, or write it by hand.`, [
         { text: "Retry", onPress: () => void printBoxLabel(trimmed) },
