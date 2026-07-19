@@ -18,6 +18,7 @@ export class BleTransport {
   private reasm = new PacketReassembler();
   private chunk = 20;
   private listeners: ((p: NiimbotPacket) => void)[] = [];
+  onDisconnect?: () => void;
 
   constructor(private log: Log = () => {}) {}
 
@@ -57,6 +58,13 @@ export class BleTransport {
     this.chunk = Math.max(20, (connected.mtu ?? 23) - 3);
     this.device = connected;
     this.log(`connected, mtu=${connected.mtu ?? "?"}`);
+
+    // The B1 idle-powers-off (drops BLE). Track it so state doesn't go stale.
+    connected.onDisconnected(() => {
+      this.log("printer disconnected");
+      this.device = null;
+      this.onDisconnect?.();
+    });
 
     connected.monitorCharacteristicForService(SERVICE, CHAR, (error, char) => {
       if (error) {

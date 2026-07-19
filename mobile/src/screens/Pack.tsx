@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  PermissionsAndroid,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -191,6 +193,32 @@ export default function Pack() {
     }
   }
 
+  async function connectPrinter() {
+    setBusy(true);
+    try {
+      if (Platform.OS === "android") {
+        const perms =
+          Platform.Version >= 31
+            ? [
+                PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+                PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+              ]
+            : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+        const res = await PermissionsAndroid.requestMultiple(perms as any);
+        if (!Object.values(res).every((v) => v === PermissionsAndroid.RESULTS.GRANTED)) {
+          Alert.alert("Bluetooth needed", "Grant Bluetooth permission to connect the printer.");
+          return;
+        }
+      }
+      await printer.connect("b1");
+      await printLabel();
+    } catch (e) {
+      Alert.alert("Couldn't connect", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function printLabel(code = draft.itemCode) {
     if (!code) return;
     if (!printer.connected || !printer.client) {
@@ -367,9 +395,17 @@ export default function Pack() {
             title={printStatus === "failed" ? "Retry print" : "Print again"}
             icon="print-outline"
             onPress={() => printLabel()}
-            disabled={printStatus === "printing"}
+            disabled={printStatus === "printing" || busy}
           />
-        ) : null}
+        ) : (
+          <PrimaryButton
+            title={busy ? "Connecting…" : "Connect printer & print"}
+            icon="bluetooth"
+            onPress={connectPrinter}
+            disabled={busy}
+            style={{ alignSelf: "stretch" }}
+          />
+        )}
         <View style={{ height: space.sm }} />
         <PrimaryButton
           title="Add photo"

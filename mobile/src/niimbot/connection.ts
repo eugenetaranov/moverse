@@ -27,6 +27,15 @@ class PrinterConnection {
 
   async connect(nameMatch = "b1"): Promise<string> {
     const t = new BleTransport(this.log);
+    // Reflect an unexpected BLE drop (e.g. printer idle-off) in our state.
+    t.onDisconnect = () => {
+      if (this.transport === t) {
+        this.transport = null;
+        this.client = null;
+        this.name = null;
+        this.emit();
+      }
+    };
     const name = await t.connect(nameMatch);
     this.transport = t;
     this.client = new NiimbotClient(t, this.log);
