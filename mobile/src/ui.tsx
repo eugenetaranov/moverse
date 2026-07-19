@@ -14,7 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
-import { colors, radius, space, type as t, HIT } from "./theme";
+import { colors, radius, space, type as t, HIT, opacity } from "./theme";
 
 export type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -84,7 +84,8 @@ export function Button({
       : tone === "danger"
         ? colors.destructive
         : colors.primary;
-  const fg = solid ? colors.onPrimary : colors.fg;
+  // Muted danger = red text on the muted chip bg (distinct but not shouting).
+  const fg = solid ? colors.onPrimary : tone === "danger" ? colors.destructive : colors.fg;
   return (
     <TouchableOpacity
       style={[styles.btn, { backgroundColor: bg }, disabled && styles.btnDisabled, style]}
@@ -135,14 +136,16 @@ export function SecondaryButton({
   disabled,
   style,
   icon,
+  tone,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
   style?: object;
   icon?: IconName;
+  tone?: "primary" | "accent" | "danger";
 }) {
-  return <Button title={title} onPress={onPress} disabled={disabled} style={style} icon={icon} variant="muted" />;
+  return <Button title={title} onPress={onPress} disabled={disabled} style={style} icon={icon} tone={tone} variant="muted" />;
 }
 
 // ---- inputs / labels ----
@@ -271,13 +274,33 @@ export function Badge({
   );
 }
 
-// Tappable chip used for box membership on item cards / detail.
-export function Chip({ label, icon, onPress }: { label: string; icon?: IconName; onPress?: () => void }) {
-  const Wrapper: typeof TouchableOpacity | typeof View = onPress ? TouchableOpacity : View;
+// Chip for box membership. Static by default; when `onPress` is given it becomes
+// a real touch target (`removable` renders a trailing close icon + a clear
+// "Remove from …" accessibility label instead of a glyph baked into the text).
+export function Chip({
+  label,
+  icon,
+  onPress,
+  removable,
+}: {
+  label: string;
+  icon?: IconName;
+  onPress?: () => void;
+  removable?: boolean;
+}) {
+  const interactive = !!onPress;
+  const Wrapper: typeof TouchableOpacity | typeof View = interactive ? TouchableOpacity : View;
   return (
-    <Wrapper style={styles.chip} onPress={onPress} accessibilityRole={onPress ? "button" : undefined} accessibilityLabel={label}>
-      {icon ? <Ionicons name={icon} size={13} color={colors.fg} style={{ marginRight: 4 }} /> : null}
+    <Wrapper
+      style={[styles.chip, interactive && styles.chipInteractive]}
+      onPress={onPress}
+      hitSlop={interactive ? 8 : undefined}
+      accessibilityRole={interactive ? "button" : undefined}
+      accessibilityLabel={removable ? `Remove from ${label}` : label}
+    >
+      {icon ? <Ionicons name={icon} size={14} color={colors.fg} style={{ marginRight: 4 }} /> : null}
       <Text style={styles.chipText}>{label}</Text>
+      {removable ? <Ionicons name="close" size={15} color={colors.mutedFg} style={{ marginLeft: 5 }} /> : null}
     </Wrapper>
   );
 }
@@ -364,20 +387,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnText: { fontSize: 16, fontWeight: "700" },
-  btnDisabled: { opacity: 0.4 },
+  btnDisabled: { opacity: opacity.disabled },
   // inputs
   input: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: space.md,
-    minHeight: HIT,
+    minHeight: 52, // match Button so paired input+button rows share a baseline
     fontSize: 16,
     color: colors.fg,
     backgroundColor: colors.surface,
   },
   inputMultiline: { minHeight: 88, paddingTop: space.md, paddingBottom: space.md, textAlignVertical: "top" },
-  inputInvalid: { borderColor: colors.warning, backgroundColor: "#FFFBEB" },
+  inputInvalid: { borderColor: colors.warning, backgroundColor: colors.warningBg },
   fieldLabelRow: { flexDirection: "row", alignItems: "center", marginTop: space.lg, marginBottom: space.sm },
   fieldLabel: { ...t.label, color: colors.mutedFg },
   sectionHeader: { ...t.label, color: colors.mutedFg, marginTop: space.xl, marginBottom: space.sm },
@@ -392,7 +415,7 @@ const styles = StyleSheet.create({
     padding: space.md,
     marginBottom: space.sm,
   },
-  selCardOn: { borderColor: colors.primary, backgroundColor: "#F1F5F9" },
+  selCardOn: { borderColor: colors.primary, backgroundColor: colors.muted },
   selIcon: {
     width: 40,
     height: 40,
@@ -438,11 +461,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
+  // Interactive (removable) chips get a real touch target; hitSlop extends it further.
+  chipInteractive: { minHeight: 40, paddingLeft: 10, paddingRight: 8, paddingVertical: 8 },
   chipText: { fontSize: 13, fontWeight: "600", color: colors.fg },
   // segmented
   segment: { flexDirection: "row", backgroundColor: colors.muted, borderRadius: radius.md, padding: 3 },
-  segmentItem: { flex: 1, minHeight: 40, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
-  segmentItemActive: { backgroundColor: colors.surface },
+  segmentItem: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  segmentItemActive: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    // subtle lift so the active pill reads beyond a ~1:1 fill change
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
   segmentText: { fontSize: 15, fontWeight: "600", color: colors.mutedFg },
   segmentTextActive: { color: colors.fg },
   // states

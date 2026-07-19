@@ -149,7 +149,7 @@ export default function BoxDetail({ route, navigation }: Props) {
             disabled={saving || !dirty}
           />
           <View style={{ height: space.sm }} />
-          <SecondaryButton title="Delete box" icon="trash-outline" onPress={confirmDeleteBox} disabled={saving} />
+          <SecondaryButton title="Delete box" icon="trash-outline" tone="danger" onPress={confirmDeleteBox} disabled={saving} />
           <Text style={styles.count}>
             {items.length} item{items.length === 1 ? "" : "s"} in this box
           </Text>

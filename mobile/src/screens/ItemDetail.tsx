@@ -187,7 +187,7 @@ export default function ItemDetail({ route, navigation }: Props) {
       <View style={styles.chips}>
         {item.boxCodes.length ? (
           item.boxCodes.map((bc) => (
-            <Chip key={bc} icon="cube-outline" label={`${bc}  ✕`} onPress={() => removeBox(bc)} />
+            <Chip key={bc} icon="cube-outline" label={bc} removable onPress={() => removeBox(bc)} />
           ))
         ) : (
           <Text style={styles.noBox}>Not in any box yet.</Text>
@@ -200,7 +200,7 @@ export default function ItemDetail({ route, navigation }: Props) {
       <Text style={styles.hint}>Tap a box chip to remove it.</Text>
 
       <View style={{ height: space.xl }} />
-      <SecondaryButton title="Delete item" icon="trash-outline" onPress={confirmDelete} disabled={saving} />
+      <SecondaryButton title="Delete item" icon="trash-outline" tone="danger" onPress={confirmDelete} disabled={saving} />
     </ScrollView>
   );
 }

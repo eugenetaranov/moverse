@@ -120,3 +120,28 @@ export async function savePrinterLabels(labels: Record<string, LabelSize>): Prom
     // best effort
   }
 }
+
+// Device ids that have ever passed a test print — persisted so QR-content editing
+// doesn't re-lock on every app restart (a test print is a one-time confirmation).
+const TESTED_KEY = "moverse.testedPrinters";
+
+export async function loadTestedPrinters(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(TESTED_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr.filter((x) => typeof x === "string");
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export async function saveTestedPrinters(ids: string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(TESTED_KEY, JSON.stringify(ids));
+  } catch {
+    // best effort
+  }
+}

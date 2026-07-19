@@ -11,10 +11,12 @@ import {
   loadPrinterLabels,
   loadRememberedPrinters,
   loadRoles,
+  loadTestedPrinters,
   roleCovers,
   savePrinterLabels,
   saveRememberedPrinters,
   saveRoles,
+  saveTestedPrinters,
 } from "./roles";
 
 export { ScanCancelledError } from "./transport";
@@ -42,21 +44,34 @@ type Listener = () => void;
 // once). Replaces the old single-connection singleton. Components subscribe to
 // re-render; print paths resolve a printer by label kind via printerForKind.
 class PrinterManager {
-  private printers = new Map<string, ManagedPrinter>(); // by device id
+  private printers = new Map<string, ManagedPrinter>(); // live connections, by device id
+  private remembered: RememberedPrinter[] = []; // persisted set (survives disconnect)
   private roles: Record<string, PrinterRole> = {};
   private labels: Record<string, LabelSize> = {};
+  private tested = new Set<string>(); // ids that have ever passed a test print
   private loaded = false;
   private scanController: AbortController | null = null;
   log: (s: string) => void = () => {};
   private listeners = new Set<Listener>();
   private reconnecting = false;
 
-  // Load persisted roles + per-printer label sizes once.
+  // Load persisted roles, label sizes, remembered set, and tested flags once.
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return;
     this.roles = await loadRoles();
     this.labels = await loadPrinterLabels();
+    this.remembered = await loadRememberedPrinters();
+    this.tested = new Set(await loadTestedPrinters());
     this.loaded = true;
+  }
+
+  // Add/update a printer in the persisted remembered set.
+  private async rememberUpsert(mp: ManagedPrinter): Promise<void> {
+    const entry: RememberedPrinter = { id: mp.id, name: mp.name, model: mp.model.id };
+    const i = this.remembered.findIndex((r) => r.id === mp.id);
+    if (i >= 0) this.remembered[i] = entry;
+    else this.remembered.push(entry);
+    await saveRememberedPrinters(this.remembered);
   }
 
   // --- Observation ---------------------------------------------------------
@@ -83,6 +98,13 @@ class PrinterManager {
   // True if any printer is connected (kept for simple UI checks).
   get connected(): boolean {
     return this.printers.size > 0;
+  }
+  // Reconnect is in flight and there are remembered printers to bring back.
+  get isReconnecting(): boolean {
+    return this.reconnecting && this.remembered.length > 0;
+  }
+  hasRemembered(): boolean {
+    return this.remembered.length > 0;
   }
 
   // --- Discovery / connection ---------------------------------------------
@@ -144,8 +166,9 @@ class PrinterManager {
     const mp = new ManagedPrinter(deviceId, name ?? resolvedName, model, t, client);
     mp.role = this.roles[deviceId] ?? DEFAULT_ROLE;
     mp.labelSize = this.labels[deviceId] ?? model.defaultLabel;
+    mp.testPassed = this.tested.has(deviceId);
     this.printers.set(deviceId, mp);
-    await this.remember();
+    await this.rememberUpsert(mp);
     this.emit();
     return mp;
   }
@@ -159,6 +182,8 @@ class PrinterManager {
     return this.connectNew(next.id, next.name);
   }
 
+  // Tear down the live connection but KEEP the printer remembered, so it
+  // auto-reconnects next launch. Non-destructive.
   async disconnect(id: string): Promise<void> {
     const mp = this.printers.get(id);
     if (!mp) return;
@@ -168,7 +193,6 @@ class PrinterManager {
       // ignore
     }
     this.printers.delete(id);
-    await this.remember();
     this.emit();
   }
 
@@ -176,10 +200,17 @@ class PrinterManager {
     for (const id of [...this.printers.keys()]) await this.disconnect(id);
   }
 
-  // Disconnect and drop from the remembered set so it won't auto-reconnect.
+  // Disconnect AND drop the printer from the remembered set + its saved role /
+  // label / tested flag, so it won't auto-reconnect. Destructive.
   async forget(id: string): Promise<void> {
+    await this.ensureLoaded();
+    this.remembered = this.remembered.filter((r) => r.id !== id);
+    await saveRememberedPrinters(this.remembered);
     delete this.roles[id];
     await saveRoles(this.roles);
+    delete this.labels[id];
+    await savePrinterLabels(this.labels);
+    if (this.tested.delete(id)) await saveTestedPrinters([...this.tested]);
     await this.disconnect(id);
   }
 
@@ -192,13 +223,16 @@ class PrinterManager {
     this.emit();
   }
 
-  // Mark that a printer completed a test print without error (session state).
+  // Mark that a printer completed a test print without error — persisted so the
+  // QR-content gate stays unlocked across restarts.
   markTested(id: string): void {
     const mp = this.printers.get(id);
-    if (mp && !mp.testPassed) {
-      mp.testPassed = true;
-      this.emit();
+    if (mp) mp.testPassed = true;
+    if (!this.tested.has(id)) {
+      this.tested.add(id);
+      void saveTestedPrinters([...this.tested]);
     }
+    this.emit();
   }
 
   // --- Per-printer label size ---------------------------------------------
@@ -229,24 +263,16 @@ class PrinterManager {
     return kinds.filter((k) => !this.list().some((p) => roleCovers(p.role, k)));
   }
 
-  // --- Persistence / reconnect --------------------------------------------
-  private async remember(): Promise<void> {
-    const list: RememberedPrinter[] = this.list().map((p) => ({
-      id: p.id,
-      name: p.name,
-      model: p.model.id,
-    }));
-    await saveRememberedPrinters(list);
-  }
-
-  // Restore roles + attempt to reconnect the remembered set in the background.
+  // --- Reconnect ----------------------------------------------------------
+  // Attempt to reconnect the remembered set in the background.
   async reconnectRemembered(): Promise<void> {
     if (this.reconnecting) return;
+    await this.ensureLoaded();
+    if (this.remembered.length === 0) return;
     this.reconnecting = true;
+    this.emit();
     try {
-      await this.ensureLoaded();
-      const remembered = await loadRememberedPrinters();
-      for (const r of remembered) {
+      for (const r of this.remembered) {
         if (this.printers.has(r.id)) continue;
         try {
           const plog = this.taggedLog(r.id);
@@ -263,6 +289,7 @@ class PrinterManager {
           const mp = new ManagedPrinter(r.id, r.name, model, t, client);
           mp.role = this.roles[r.id] ?? DEFAULT_ROLE;
           mp.labelSize = this.labels[r.id] ?? model.defaultLabel;
+          mp.testPassed = this.tested.has(r.id);
           this.printers.set(r.id, mp);
           this.emit();
         } catch (e) {
@@ -271,6 +298,7 @@ class PrinterManager {
       }
     } finally {
       this.reconnecting = false;
+      this.emit();
     }
   }
 }

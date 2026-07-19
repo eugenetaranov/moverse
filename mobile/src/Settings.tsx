@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -36,7 +37,7 @@ import {
   saveTuning,
 } from "./labelSettings";
 import { LabelingMode, loadMode, saveMode } from "./labelingMode";
-import { colors, radius, space, type as t, HIT } from "./theme";
+import { colors, radius, space, type as t, HIT, opacity } from "./theme";
 import { Button, Segmented, SelectableCard, SectionHeader, TextField, SCREEN, type IconName } from "./ui";
 
 async function requestBlePermissions(): Promise<boolean> {
@@ -75,6 +76,7 @@ export default function Settings() {
   const extraDirty = boxExtra !== savedExtra;
   const [boxQr, setBoxQr] = useState<BoxQrContent>(DEFAULT_BOX_QR);
   const [picker, setPicker] = useState<PrinterCandidate[] | null>(null);
+  const [connectingName, setConnectingName] = useState<string | null>(null);
   // Live per-printer size edits (by device id). A printer's draft falls back to
   // its saved size; editing updates the draft, and Save commits it.
   const [sizeDraft, setSizeDraft] = useState<Record<string, LabelSize>>({});
@@ -147,13 +149,22 @@ export default function Settings() {
     setBusy(true);
     try {
       if ((await printers.bluetoothState()) === "PoweredOff") {
-        Alert.alert("Bluetooth is off", "Turn on Bluetooth, then search for your printer again.");
+        Alert.alert("Bluetooth is off", "Turn on Bluetooth, then search for your printer again.", [
+          { text: "Open settings", onPress: () => void Linking.openSettings() },
+          { text: "Try again", onPress: () => void addPrinter() },
+          { text: "Cancel", style: "cancel" },
+        ]);
         return;
       }
       if (!(await requestBlePermissions())) {
         Alert.alert(
           "Bluetooth permission needed",
-          "Moverse needs Bluetooth permission to find printers. Enable it in the system settings, then try again.",
+          "Moverse needs Bluetooth permission to find printers. If you've denied it before, enable it in the app settings.",
+          [
+            { text: "Open settings", onPress: () => void Linking.openSettings() },
+            { text: "Try again", onPress: () => void addPrinter() },
+            { text: "Cancel", style: "cancel" },
+          ],
         );
         return;
       }
@@ -189,6 +200,7 @@ export default function Settings() {
 
   async function connectPicked(c: PrinterCandidate) {
     setPicker(null);
+    setConnectingName(c.name);
     setBusy(true);
     try {
       const mp = await printers.connectNew(c.id, c.name);
@@ -196,6 +208,7 @@ export default function Settings() {
     } catch (e) {
       log(`connect failed: ${String((e as Error)?.message ?? e)}`);
     } finally {
+      setConnectingName(null);
       setBusy(false);
     }
   }
@@ -208,18 +221,43 @@ export default function Settings() {
       `NIIMBOT Bluetooth label printers.\n\nTested: ${tested.join(", ") || "—"}\nDetected (unverified): ${detected.join(", ")}\n\nOther NIIMBOT models may still work using default settings.`,
     );
   }
+  // Non-destructive: drop the live link but keep the printer remembered so it
+  // reconnects next launch.
   async function disconnectOne(mp: ManagedPrinter) {
     setBusy(true);
     try {
-      await printers.forget(mp.id);
-      log(`disconnected ${mp.name}`);
-      if (printers.count === 0) setLines([]); // no printers left → drop the log
+      await printers.disconnect(mp.id);
+      log(`disconnected ${mp.name} (still remembered)`);
     } finally {
       setBusy(false);
     }
   }
+
+  // Destructive: confirm, then forget the printer entirely (role, size, tested).
+  function forgetOne(mp: ManagedPrinter) {
+    Alert.alert(
+      "Forget this printer?",
+      `${mp.name} will be removed and won't reconnect automatically — you'll need to add it again.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Forget",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await printers.forget(mp.id);
+              log(`forgot ${mp.name}`);
+              if (!printers.hasRemembered()) setLines([]); // no printers left → drop the log
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }
   async function printTestOn(mp: ManagedPrinter) {
-    setLines([]); // fresh log so it shows just this print
     setPrintingId(mp.id);
     try {
       const { widthPx, heightPx } = labelPx(mp.labelSize, mp.model.widthPx);
@@ -297,7 +335,7 @@ export default function Settings() {
               <Ionicons
                 name={on ? "checkmark-circle" : "ellipse-outline"}
                 size={22}
-                color={on ? colors.accent : colors.border}
+                color={on ? colors.accent : colors.mutedFg}
               />
             }
           />
@@ -306,14 +344,20 @@ export default function Settings() {
 
       {mode !== "assign" ? (
         <Text style={[styles.hint, { marginTop: space.lg }]}>
-          Printer and label options appear when “App assigns codes” is selected.
+          Printer and label options appear when “App assigns codes” is selected. Your printers stay
+          paired and reconnect when you switch back.
         </Text>
       ) : (
         <>
       <View style={styles.section}>
       {/* Printers */}
       <SectionHeader>Printers</SectionHeader>
-      {printers.list().length === 0 ? (
+      {printers.list().length === 0 && printers.isReconnecting ? (
+        <View style={styles.scanRow}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.scanText}>Reconnecting your printer…</Text>
+        </View>
+      ) : printers.list().length === 0 ? (
         <>
           <Text style={styles.hint}>No printer connected.</Text>
           <TouchableOpacity onPress={showSupportedPrinters} hitSlop={8} style={styles.logMiniLink}>
@@ -386,6 +430,7 @@ export default function Settings() {
                       <Text style={styles.format}>{fitsQr(draft) ? "QR code + text" : "Text only"}</Text>
                       <Text style={styles.headHint}>· head {Math.round(mp.model.widthPx / 8)}mm max</Text>
                     </View>
+                    <Text style={styles.headHint}>Width/height 5–120mm.</Text>
                     {dirty ? (
                       <>
                         <View style={{ height: space.sm }} />
@@ -399,6 +444,7 @@ export default function Settings() {
               <View style={[styles.row, { marginTop: space.md }]}>
                 <Button
                   title="Disconnect"
+                  variant="muted"
                   onPress={() => disconnectOne(mp)}
                   disabled={busy || isPrinting}
                   style={styles.flexBtn}
@@ -415,21 +461,37 @@ export default function Settings() {
                   />
                 )}
               </View>
-              <TouchableOpacity
-                style={styles.cardLogLink}
-                onPress={() => openLog(mp.id)}
-                hitSlop={8}
-                accessibilityLabel={`View ${mp.name} log`}
-              >
-                <Ionicons name="document-text-outline" size={13} color={colors.mutedFg} />
-                <Text style={styles.logMiniText}>View this printer's log</Text>
-              </TouchableOpacity>
+              <View style={styles.cardLinksRow}>
+                <TouchableOpacity
+                  onPress={() => openLog(mp.id)}
+                  hitSlop={8}
+                  accessibilityLabel={`View ${mp.name} log`}
+                  style={styles.cardLinkItem}
+                >
+                  <Ionicons name="document-text-outline" size={13} color={colors.mutedFg} />
+                  <Text style={styles.logMiniText}>View log</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => forgetOne(mp)}
+                  hitSlop={8}
+                  accessibilityLabel={`Forget ${mp.name}`}
+                  style={styles.cardLinkItem}
+                >
+                  <Ionicons name="trash-outline" size={13} color={colors.destructive} />
+                  <Text style={[styles.logMiniText, { color: colors.destructive }]}>Forget printer</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           );
         })
       )}
       <View style={{ height: space.sm }} />
-      {printers.scanning ? (
+      {connectingName ? (
+        <View style={styles.scanRow}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.scanText}>Connecting to {connectingName}…</Text>
+        </View>
+      ) : printers.scanning ? (
         <View style={styles.scanRow}>
           <ActivityIndicator color={colors.accent} />
           <Text style={styles.scanText}>Searching for a printer…</Text>
@@ -553,7 +615,7 @@ export default function Settings() {
                   onPress={copyLog}
                   disabled={shownLines.length === 0}
                   hitSlop={8}
-                  style={styles.modalAction}
+                  style={[styles.modalAction, shownLines.length === 0 && styles.modalActionDisabled]}
                 >
                   <Ionicons name="copy-outline" size={16} color={colors.accent} />
                   <Text style={styles.modalActionText}>Copy</Text>
@@ -562,7 +624,7 @@ export default function Settings() {
                   onPress={() => setLines([])}
                   disabled={lines.length === 0}
                   hitSlop={8}
-                  style={styles.modalAction}
+                  style={[styles.modalAction, lines.length === 0 && styles.modalActionDisabled]}
                 >
                   <Ionicons name="trash-outline" size={16} color={colors.accent} />
                   <Text style={styles.modalActionText}>Clear</Text>
@@ -606,17 +668,28 @@ export default function Settings() {
               </TouchableOpacity>
             </View>
             <Text style={styles.hint}>Several printers are nearby — strongest signal first.</Text>
-            {(picker ?? []).map((c) => (
-              <TouchableOpacity key={c.id} style={styles.pickerRow} onPress={() => void connectPicked(c)} activeOpacity={0.7}>
-                <Ionicons name="print-outline" size={18} color={colors.accent} />
-                <Text style={styles.pickerName} numberOfLines={1}>{c.name}</Text>
-                <Ionicons
-                  name={c.rssi >= -60 ? "cellular" : c.rssi >= -80 ? "cellular-outline" : "warning-outline"}
-                  size={16}
-                  color={colors.mutedFg}
-                />
-              </TouchableOpacity>
-            ))}
+            {(picker ?? []).map((c) => {
+              const signal = c.rssi >= -60 ? "Strong" : c.rssi >= -80 ? "Fair" : "Weak";
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  style={styles.pickerRow}
+                  onPress={() => void connectPicked(c)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${c.name}, ${signal} signal`}
+                >
+                  <Ionicons name="print-outline" size={18} color={colors.accent} />
+                  <Text style={styles.pickerName} numberOfLines={1}>{c.name}</Text>
+                  <Text style={styles.pickerSignal}>{signal}</Text>
+                  <Ionicons
+                    name={c.rssi >= -60 ? "cellular" : c.rssi >= -80 ? "cellular-outline" : "warning-outline"}
+                    size={16}
+                    color={colors.mutedFg}
+                  />
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
       </Modal>
@@ -667,22 +740,12 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   section: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: space.md },
-  cardLogLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: space.md,
-    paddingTop: space.sm,
-    paddingVertical: space.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
   roleBlock: { marginTop: space.md },
   sizeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: space.xs },
   savedTag: { flexDirection: "row", alignItems: "center", gap: 3 },
   savedTagText: { ...t.caption, color: colors.accent, fontWeight: "600" },
   headHint: { ...t.caption, color: colors.mutedFg, marginLeft: space.xs },
-  disabledBlock: { opacity: 0.45 },
+  disabledBlock: { opacity: opacity.disabled },
   pickerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -692,6 +755,16 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   pickerName: { ...t.bodyStrong, color: colors.fg, flex: 1 },
+  pickerSignal: { ...t.caption, color: colors.mutedFg, marginRight: space.xs },
+  cardLinksRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: space.md,
+    paddingTop: space.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  cardLinkItem: { flexDirection: "row", alignItems: "center", gap: 5, paddingVertical: space.xs },
   scanRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -719,8 +792,9 @@ const styles = StyleSheet.create({
   logMiniLink: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: space.sm, paddingVertical: space.xs },
   logMiniText: { ...t.caption, color: colors.mutedFg, textDecorationLine: "underline" },
   modalAction: { flexDirection: "row", alignItems: "center", gap: 4 },
+  modalActionDisabled: { opacity: opacity.disabled },
   modalActionText: { color: colors.accent, fontWeight: "700", fontSize: 14 },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(15,23,42,0.5)", justifyContent: "flex-end" },
+  modalBackdrop: { flex: 1, backgroundColor: colors.scrim, justifyContent: "flex-end" },
   modalCard: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.lg,

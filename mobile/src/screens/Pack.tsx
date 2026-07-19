@@ -549,7 +549,13 @@ export default function Pack() {
         ) : (
           <Text style={styles.bodyCenter}>Text-only label (small stock)</Text>
         )}
-        <Text style={styles.printStatus}>
+        <Text
+          style={[
+            styles.printStatus,
+            printStatus === "done" && { color: colors.accent },
+            (printStatus === "failed" || printStatus === "noprinter") && { color: colors.warning },
+          ]}
+        >
           {printStatus === "printing"
             ? "Printing…"
             : printStatus === "done"
@@ -749,9 +755,9 @@ export default function Pack() {
             <Ionicons
               name="sparkles-outline"
               size={13}
-              color={draft.photoBase64 ? colors.accent : colors.border}
+              color={draft.photoBase64 ? colors.accent : colors.mutedFg}
             />
-            <Text style={[styles.aiLinkText, { color: draft.photoBase64 ? colors.accent : colors.border }]}>
+            <Text style={[styles.aiLinkText, { color: draft.photoBase64 ? colors.accent : colors.mutedFg }]}>
               {describeState === "loading" ? "Describing…" : "Auto-describe"}
             </Text>
           </TouchableOpacity>
@@ -1025,9 +1031,9 @@ const styles = StyleSheet.create({
   },
   bannerLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: space.sm },
   bannerOk: { backgroundColor: colors.primary },
-  bannerWarn: { backgroundColor: colors.destructive },
+  bannerWarn: { backgroundColor: colors.warning },
   bannerText: { ...t.title, color: colors.onPrimary, marginLeft: space.sm, flexShrink: 1 },
-  bannerAction: { fontSize: 14, fontWeight: "700", color: "#CBD5E1" },
+  bannerAction: { fontSize: 14, fontWeight: "700", color: colors.onPrimary },
   status: { ...t.caption, fontWeight: "600", marginTop: space.sm, marginBottom: space.xs, marginHorizontal: space.lg },
   statusToast: { color: colors.accent },
   statusIdle: { color: colors.mutedFg },
@@ -1106,7 +1112,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   multiline: { minHeight: 76, paddingTop: space.md, paddingBottom: space.md, textAlignVertical: "top" },
-  inputBad: { borderColor: colors.warning, backgroundColor: "#FFFBEB" },
+  inputBad: { borderColor: colors.warning, backgroundColor: colors.warningBg },
   warn: { color: colors.warning, fontSize: 13, marginTop: space.xs, fontWeight: "600" },
   descHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   aiLink: { flexDirection: "row", alignItems: "center", gap: 4 },

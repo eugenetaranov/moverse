@@ -10,13 +10,17 @@ export const colors = {
   bg: "#F8FAFC", // app background
   surface: "#FFFFFF", // cards / inputs
   fg: "#0F172A", // primary text (contrast ~16:1 on surface)
-  mutedFg: "#64748B", // secondary text (slate-500, ~4.6:1 on white)
+  mutedFg: "#475569", // secondary text (slate-600, ~7:1 on white, >=AA on muted too)
   muted: "#F1F5F9", // secondary button / chip bg
-  border: "#E2E8F0", // slate-200
-  destructive: "#B91C1C", // red-700 — no-box / errors (white text ~6:1)
-  warning: "#B45309", // amber-700 — inline warnings on white (~4.5:1)
+  border: "#E2E8F0", // slate-200 — HAIRLINES/BORDERS ONLY, never a text/icon color
+  destructive: "#B91C1C", // red-700 — errors / data loss (white text ~6:1)
+  warning: "#B45309", // amber-700 — inline warnings / non-error attention (~4.5:1)
+  warningBg: "#FFFBEB", // amber-50 — invalid-field / warning wash
+  scrim: "rgba(15,23,42,0.5)", // modal/overlay backdrop
   fieldBg: "#F8FAFC",
 } as const;
+
+export const opacity = { disabled: 0.45 } as const;
 
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 
