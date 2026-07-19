@@ -3,7 +3,7 @@
 - [x] 1.1 Add `nextBoxCode(c)` in `lib/moverse.ts` — page the Boxes table `Box Code` field, match `^BOX-(\d+)$`, ignore non-numeric codes, return `BOX-${max+1}` zero-padded to 4 (mirror `nextItemCode`).
 - [x] 1.2 Add `handleNextBoxCode(c)` returning `{ nextBoxCode }` (mirror `handleNextCode`).
 - [x] 1.3 Add the `/next-box-code` handler in `api/` and the rewrite in `vercel.json`, guarded identically to `/next-code`.
-- [ ] 1.4 Verify `POST /next-box-code` returns `BOX-0001` on an empty table, max+1 otherwise, ignores named boxes, and 401s without the app secret.
+- [x] 1.4 Verify `POST /next-box-code` returns `BOX-0001` on an empty table, max+1 otherwise, ignores named boxes, and 401s without the app secret. _(curl: returns `{"nextBoxCode":"BOX-0001"}` with the secret, 401 without.)_
 
 ## 2. Backend: codeless new box on save (none mode)
 
