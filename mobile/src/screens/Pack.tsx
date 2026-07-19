@@ -543,6 +543,7 @@ export default function Pack() {
       <Center>
         <Text style={styles.h2}>Label</Text>
         <Text style={styles.bigCode}>{draft.itemCode}</Text>
+        <Text style={styles.bodyCenter}>Stick this label on the item, then add a photo &amp; details.</Text>
         <View style={{ height: space.md }} />
         {fitsQr(printers.printerForKind("item")?.labelSize ?? labelSize) ? (
           <QrPreview text={draft.itemCode} />
@@ -586,13 +587,14 @@ export default function Pack() {
         )}
         <View style={{ height: space.sm }} />
         <PrimaryButton
-          title="Add photo"
+          title="Next — take photo"
           icon="camera-outline"
+          accent
           onPress={() => setScreen("photo")}
           style={styles.stretchBtn}
         />
         <View style={{ height: space.sm }} />
-        <SecondaryButton title="Done" onPress={() => setScreen("home")} style={styles.stretchBtn} />
+        <SecondaryButton title="Skip — go to item" onPress={() => setScreen("home")} style={styles.stretchBtn} />
       </Center>
     );
 
