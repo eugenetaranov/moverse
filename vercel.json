@@ -4,6 +4,7 @@
     { "source": "/describe", "destination": "/api/describe" },
     { "source": "/save", "destination": "/api/save" },
     { "source": "/next-code", "destination": "/api/next-code" },
+    { "source": "/next-box-code", "destination": "/api/next-box-code" },
     { "source": "/boxes", "destination": "/api/boxes" },
     { "source": "/items", "destination": "/api/items" },
     { "source": "/item-update", "destination": "/api/item-update" },

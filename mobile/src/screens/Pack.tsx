@@ -50,6 +50,7 @@ import {
 import { printers } from "../niimbot/connection";
 import { renderLabel, renderBoxLabel } from "../niimbot/label";
 import { reserveCode, seedReservation } from "../reservation";
+import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
 import { Box, loadInventory } from "../inventory";
 import { colors, radius, space, type as t, HIT } from "../theme";
 import {
@@ -66,13 +67,23 @@ import type { PackStackParamList, RootTabParamList } from "../navTypes";
 interface Draft {
   itemCode: string;
   boxCode: string;
+  newBox?: boolean; // "No codes" mode: a new box whose BOX-#### is minted at save
   description: string;
   photoUri: string;
   photoBase64: string;
 }
 const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photoUri: "", photoBase64: "" };
 
-type Screen = "home" | "capture" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeCode" | "label";
+type Screen =
+  | "home"
+  | "capture"
+  | "photo"
+  | "scanItem"
+  | "scanBox"
+  | "setBox"
+  | "writeCode"
+  | "writeBox"
+  | "label";
 type PrintStatus = "idle" | "printing" | "done" | "failed" | "noprinter";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
@@ -125,6 +136,7 @@ export default function Pack() {
     loadBoxExtra().then(setBoxExtra);
     loadBoxQr().then(setBoxQr);
     void seedReservation();
+    void seedBoxReservation();
     void printers.reconnectRemembered();
     return printers.subscribe(() => force((n) => n + 1));
   }, []);
@@ -189,8 +201,33 @@ export default function Pack() {
         { text: "Switch", onPress: () => edit({ boxCode: trimmed }) },
       ]);
     } else {
-      edit({ boxCode: trimmed });
+      edit({ boxCode: trimmed, newBox: false });
       setScreen("home");
+    }
+  }
+
+  // "New box": auto-generate a box code (parity with item codes).
+  async function startNewBox() {
+    if (mode === "none") {
+      // Codeless new box — the server mints BOX-#### at save time.
+      edit({ boxCode: "", newBox: true });
+      setScreen("home");
+      return;
+    }
+    setBusy(true);
+    try {
+      const code = await reserveBoxCode();
+      edit({ boxCode: code, newBox: false });
+      if (printers.printerForKind("box")) {
+        setScreen("home");
+        void printBoxLabel(code);
+      } else {
+        setScreen("writeBox");
+      }
+    } catch (e) {
+      Alert.alert("Couldn't get a box code", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -339,22 +376,26 @@ export default function Pack() {
     try {
       const res = await save({
         itemCode: mode === "none" ? undefined : code,
-        boxCode: box,
+        boxCode: box || undefined,
+        newBox: draft.newBox,
         description: draft.description.trim(),
         imageBase64: draft.photoBase64,
       });
       buzzOk();
       const shown = res.itemCode ?? code;
+      const shownBox = res.boxCode ?? box; // may be a server-minted BOX-####
       showFlash(
         "success",
         res.action === "exists"
-          ? `${shown} already in ${box}`
+          ? `${shown} already in ${shownBox}`
           : res.action === "added"
-            ? `Added ${shown} → ${box}`
-            : `Saved ${shown} → ${box}`,
+            ? `Added ${shown} → ${shownBox}`
+            : `Saved ${shown} → ${shownBox}`,
       );
       if (res.action !== "exists") setCount((c) => c + 1);
-      setDraft({ ...EMPTY, boxCode: draft.boxCode });
+      // Hold the (possibly newly-minted) box as the current box; clear the
+      // new-box flag so later items reuse it instead of minting again.
+      setDraft({ ...EMPTY, boxCode: res.boxCode ?? draft.boxCode });
       setDescribeState("idle");
     } catch (e) {
       buzzErr();
@@ -443,6 +484,8 @@ export default function Pack() {
         onScan={() => setScreen("scanBox")}
         onCancel={() => setScreen("home")}
         onPrint={mode === "assign" ? (code) => void printBoxLabel(code) : undefined}
+        onNew={mode === "scan" ? undefined : () => void startNewBox()}
+        busy={busy}
       />
     );
   if (screen === "writeCode")
@@ -464,6 +507,31 @@ export default function Pack() {
           title="Cancel"
           onPress={() => {
             edit({ itemCode: "" });
+            setScreen("home");
+          }}
+          style={styles.stretchBtn}
+        />
+      </Center>
+    );
+  if (screen === "writeBox")
+    return (
+      <Center>
+        <Ionicons name="create-outline" size={40} color={colors.primary} />
+        <Text style={styles.h2}>Write this on the box</Text>
+        <Text style={styles.bigCode}>{draft.boxCode}</Text>
+        <View style={{ height: space.xl }} />
+        <PrimaryButton
+          title="Done"
+          icon="checkmark"
+          accent
+          onPress={() => setScreen("home")}
+          style={styles.stretchBtn}
+        />
+        <View style={{ height: space.sm }} />
+        <SecondaryButton
+          title="Cancel"
+          onPress={() => {
+            edit({ boxCode: "", newBox: false });
             setScreen("home");
           }}
           style={styles.stretchBtn}
@@ -525,7 +593,9 @@ export default function Pack() {
   // ---- home hub ----
   const itemBad = draft.itemCode.trim() !== "" && classify(draft.itemCode) !== "item";
   const itemOk = draft.itemCode.trim() !== "" && !itemBad;
-  const boxOk = draft.boxCode.trim() !== "";
+  // A new codeless box (none mode) has no code yet but is a valid target — the
+  // server mints its BOX-#### at save.
+  const boxOk = draft.boxCode.trim() !== "" || !!draft.newBox;
   const descOk = draft.description.trim() !== "";
   const needCode = mode !== "none";
   const draftEmpty = draft.itemCode.trim() === "" && draft.photoUri === "";
@@ -574,7 +644,11 @@ export default function Pack() {
         <View style={styles.bannerLeft}>
           <Ionicons name="cube-outline" size={20} color={colors.onPrimary} />
           <Text style={styles.bannerText} numberOfLines={1}>
-            {boxOk ? `Packing into ${draft.boxCode.trim()}` : "No box — tap to set"}
+            {draft.newBox && !draft.boxCode.trim()
+              ? "New box — code on save"
+              : boxOk
+                ? `Packing into ${draft.boxCode.trim()}`
+                : "No box — tap to set"}
           </Text>
         </View>
         <Text style={styles.bannerAction}>{boxOk ? "Change" : "Set"}</Text>
@@ -715,7 +789,15 @@ export default function Pack() {
           />
         ) : (
           <PrimaryButton
-            title={saving ? "Saving…" : boxOk ? `Save → ${draft.boxCode.trim()}` : "Save"}
+            title={
+              saving
+                ? "Saving…"
+                : draft.boxCode.trim()
+                  ? `Save → ${draft.boxCode.trim()}`
+                  : draft.newBox
+                    ? "Save → new box"
+                    : "Save"
+            }
             icon="checkmark"
             accent
             onPress={doSave}
@@ -812,11 +894,15 @@ function SetBox({
   onScan,
   onCancel,
   onPrint,
+  onNew,
+  busy,
 }: {
   onSet: (code: string) => void;
   onScan: () => void;
   onCancel: () => void;
   onPrint?: (code: string) => void;
+  onNew?: () => void;
+  busy?: boolean;
 }) {
   const [text, setText] = useState("");
   const [boxes, setBoxes] = useState<Box[]>([]);
@@ -838,9 +924,23 @@ function SetBox({
       <View style={{ alignItems: "center" }}>
         <Ionicons name="cube-outline" size={40} color={colors.primary} />
         <Text style={styles.h2}>Which box?</Text>
-        <Text style={styles.bodyCenter}>Pick an existing box, scan a label, or type a name.</Text>
+        <Text style={styles.bodyCenter}>Start a new box, pick an existing one, scan a label, or type a name.</Text>
       </View>
       <View style={{ height: space.lg }} />
+
+      {onNew ? (
+        <>
+          <PrimaryButton
+            title={busy ? "Working…" : "New box"}
+            icon="add"
+            accent
+            onPress={onNew}
+            disabled={busy}
+            style={styles.stretchBtn}
+          />
+          <Text style={styles.orText}>or pick / scan / type</Text>
+        </>
+      ) : null}
 
       <TouchableOpacity style={styles.dropdown} onPress={() => setOpen((o) => !o)} activeOpacity={0.8}>
         <Ionicons name="albums-outline" size={18} color={colors.mutedFg} />

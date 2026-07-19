@@ -113,16 +113,23 @@ export async function handleDescribe(req: Request, c: Cfg): Promise<Response> {
 /* ---------------- /save ---------------- */
 
 export async function handleSave(req: Request, c: Cfg): Promise<Response> {
-  const { itemCode, boxCode, description, imageBase64 } = (await req.json()) as {
+  const { itemCode, boxCode, newBox, description, imageBase64 } = (await req.json()) as {
     itemCode?: string;
     boxCode?: string;
+    newBox?: boolean; // "none" mode: mint a fresh BOX-#### for this new box
     description?: string;
     imageBase64?: string;
   };
 
-  if (!boxCode) return json({ error: "missing_box" }, 400);
+  // "No codes" mode can start a brand-new box with no code — mint one server-side.
+  // Otherwise a box code is required.
+  let effectiveBoxCode = (boxCode ?? "").trim();
+  if (!effectiveBoxCode) {
+    if (!newBox) return json({ error: "missing_box" }, 400);
+    effectiveBoxCode = await nextBoxCode(c);
+  }
 
-  const boxId = await findOrCreateBox(c, boxCode);
+  const boxId = await findOrCreateBox(c, effectiveBoxCode);
   const trimmedItem = (itemCode ?? "").trim();
 
   // "No codes" mode: the client sent no item code. Mint one server-side and
@@ -131,7 +138,7 @@ export async function handleSave(req: Request, c: Cfg): Promise<Response> {
     const minted = await nextItemCode(c);
     const itemId = await createItem(c, { itemCode: minted, description: description ?? "", boxId });
     if (imageBase64) await uploadPhoto(c, itemId, imageBase64);
-    return json({ ok: true, itemId, itemCode: minted, action: "created" });
+    return json({ ok: true, itemId, itemCode: minted, boxCode: effectiveBoxCode, action: "created" });
   }
 
   // Coded modes: one record per item code (no duplicate rows), but an item may
@@ -139,10 +146,10 @@ export async function handleSave(req: Request, c: Cfg): Promise<Response> {
   const existing = await findItemByCode(c, trimmedItem);
   if (existing) {
     if (existing.boxIds.includes(boxId)) {
-      return json({ ok: true, itemId: existing.id, action: "exists" });
+      return json({ ok: true, itemId: existing.id, boxCode: effectiveBoxCode, action: "exists" });
     }
     await setItemBoxes(c, existing.id, [...existing.boxIds, boxId]);
-    return json({ ok: true, itemId: existing.id, action: "added" });
+    return json({ ok: true, itemId: existing.id, boxCode: effectiveBoxCode, action: "added" });
   }
 
   const itemId = await createItem(c, {
@@ -154,7 +161,7 @@ export async function handleSave(req: Request, c: Cfg): Promise<Response> {
     await uploadPhoto(c, itemId, imageBase64);
   }
 
-  return json({ ok: true, itemId, itemCode: trimmedItem, action: "created" });
+  return json({ ok: true, itemId, itemCode: trimmedItem, boxCode: effectiveBoxCode, action: "created" });
 }
 
 /* ---------------- /next-code ---------------- */
@@ -191,6 +198,42 @@ async function nextItemCode(c: Cfg): Promise<string> {
 
 export async function handleNextCode(c: Cfg): Promise<Response> {
   return json({ nextCode: await nextItemCode(c) });
+}
+
+/* ---------------- /next-box-code ---------------- */
+
+// The next box code as BOX-#### one above the highest numeric BOX code in
+// Airtable. Non-numeric codes (e.g. named boxes like "Kitchen") are ignored.
+async function nextBoxCode(c: Cfg): Promise<string> {
+  let max = 0;
+  let offset: string | undefined;
+  do {
+    const u = new URL(airtableApi(c, c.boxesTable));
+    u.searchParams.set("pageSize", "100");
+    u.searchParams.append("fields[]", "Box Code");
+    if (offset) u.searchParams.set("offset", offset);
+
+    const res = await fetch(u.toString(), { headers: authHeaders(c) });
+    if (!res.ok) throw new Error(`next_box_code_query_${res.status}`);
+    const data = (await res.json()) as {
+      records?: Array<{ fields?: { "Box Code"?: string } }>;
+      offset?: string;
+    };
+    for (const r of data.records ?? []) {
+      const m = /^BOX-(\d+)$/.exec((r.fields?.["Box Code"] ?? "").trim());
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > max) max = n;
+      }
+    }
+    offset = data.offset;
+  } while (offset);
+
+  return `BOX-${String(max + 1).padStart(4, "0")}`;
+}
+
+export async function handleNextBoxCode(c: Cfg): Promise<Response> {
+  return json({ nextBoxCode: await nextBoxCode(c) });
 }
 
 /* ---------------- Airtable helpers ---------------- */

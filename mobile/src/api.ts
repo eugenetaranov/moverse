@@ -19,7 +19,8 @@ export async function describe(imageBase64: string): Promise<string> {
 
 export interface SavePayload {
   itemCode?: string; // omitted in "No codes" mode; the server mints one
-  boxCode: string;
+  boxCode?: string; // omitted when starting a new codeless box (see newBox)
+  newBox?: boolean; // "No codes" mode: mint a fresh BOX-#### for a new box
   description: string;
   imageBase64: string;
 }
@@ -31,6 +32,7 @@ export interface SaveResult {
   itemId: string;
   action: SaveAction;
   itemCode?: string; // the code the item ended up with (esp. a server-minted one)
+  boxCode?: string; // the box the item ended up in (esp. a server-minted one)
 }
 
 // The next ITM-#### code to assign, from the backend (Airtable max + 1).
@@ -42,6 +44,15 @@ export async function nextCode(): Promise<string> {
   return data.nextCode;
 }
 
+// The next BOX-#### code to assign, from the backend (Airtable max + 1).
+export async function nextBoxCode(): Promise<string> {
+  const res = await fetch(`${WORKER_URL}/next-box-code`, { method: "POST", headers: headers() });
+  if (!res.ok) throw new Error(`next-box-code failed (${res.status})`);
+  const data = (await res.json()) as { nextBoxCode?: string };
+  if (!data.nextBoxCode) throw new Error("next-box-code missing");
+  return data.nextBoxCode;
+}
+
 export async function save(payload: SavePayload): Promise<SaveResult> {
   const res = await fetch(`${WORKER_URL}/save`, {
     method: "POST",
@@ -49,6 +60,16 @@ export async function save(payload: SavePayload): Promise<SaveResult> {
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`save failed (${res.status})`);
-  const data = (await res.json()) as { itemId?: string; action?: SaveAction; itemCode?: string };
-  return { itemId: data.itemId ?? "", action: data.action ?? "created", itemCode: data.itemCode };
+  const data = (await res.json()) as {
+    itemId?: string;
+    action?: SaveAction;
+    itemCode?: string;
+    boxCode?: string;
+  };
+  return {
+    itemId: data.itemId ?? "",
+    action: data.action ?? "created",
+    itemCode: data.itemCode,
+    boxCode: data.boxCode,
+  };
 }
