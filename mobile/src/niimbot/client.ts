@@ -164,6 +164,13 @@ export class NiimbotClient {
     });
   }
 
+  // Identity/liveness check: ask for status and wait for a well-formed reply.
+  // Used right after connect to confirm we're talking to a real printer.
+  async ping(timeoutMs = 1500): Promise<boolean> {
+    const resp = await this.sendRecv(T.GET_STATUS, [1], RESP_STATUS, timeoutMs);
+    return resp !== null;
+  }
+
   async printImage(img: Bitmap, density = 3, labelType = 1): Promise<void> {
     this.aborted = false;
     this.ackMode = "unknown";

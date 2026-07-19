@@ -2,6 +2,7 @@ import { Device } from "react-native-ble-plx";
 import { fromByteArray, toByteArray } from "base64-js";
 import { NiimbotPacket, PacketReassembler } from "./packet";
 import { bleManager } from "./ble";
+import { isNiimbotName } from "./models";
 
 // Most NIIMBOT printers expose this service + a single WRITE_NO_RESPONSE/NOTIFY
 // characteristic. Ref: printers.niim.blue.
@@ -54,20 +55,22 @@ export async function scanPrinters(
     }
     const timer = setTimeout(finish, timeoutMs);
     signal?.addEventListener("abort", onAbort);
+    // Scan all services (Niimbot printers don't reliably advertise the service
+    // in the ad packet), then accept a device if its name is an anchored Niimbot
+    // match OR it advertises our service UUID — robust to renamed printers
+    // without missing ones whose ad packet omits the service.
     mgr.startDeviceScan(null, { allowDuplicates: false }, (error, dev) => {
       if (error) {
         cleanup();
         reject(error);
         return;
       }
-      const name = (dev?.name ?? dev?.localName ?? "").toLowerCase();
-      if (dev && name && (name.includes("niimbot") || name.includes("b1") || name.includes("d11"))) {
-        if (!found.has(dev.id)) log(`found ${dev.name ?? dev.localName ?? dev.id}`);
-        found.set(dev.id, {
-          id: dev.id,
-          name: dev.name ?? dev.localName ?? dev.id,
-          rssi: dev.rssi ?? -999,
-        });
+      if (!dev) return;
+      const name = dev.name ?? dev.localName ?? "";
+      const advertisesService = (dev.serviceUUIDs ?? []).some((u) => u.toLowerCase() === SERVICE.toLowerCase());
+      if (isNiimbotName(name) || advertisesService) {
+        if (!found.has(dev.id)) log(`found ${name || dev.id}`);
+        found.set(dev.id, { id: dev.id, name: name || dev.id, rssi: dev.rssi ?? -999 });
       }
     });
   });

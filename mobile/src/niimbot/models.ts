@@ -40,6 +40,16 @@ function nameMatches(haystack: string, token: string): boolean {
   return re.test(haystack) || haystack.toLowerCase() === token;
 }
 
+// Whether an advertised name looks like a Niimbot printer, using anchored token
+// matching (a bare "niimbot" or any known model token). Avoids substring false
+// matches like "Room-B1" or "B18-speaker" being treated as a B1.
+export function isNiimbotName(name: string | null | undefined): boolean {
+  const n = (name ?? "").toLowerCase();
+  if (!n) return false;
+  if (nameMatches(n, "niimbot")) return true;
+  return NIIMBOT_MODELS.some((m) => m.matchNames.some((tok) => nameMatches(n, tok)));
+}
+
 // Detect a model from the advertised device name. Returns the default model when
 // nothing matches so callers always have usable width params.
 export function detectModel(name: string | null | undefined): NiimbotModel {

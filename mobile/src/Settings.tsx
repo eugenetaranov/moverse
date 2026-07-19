@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -13,6 +14,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { ManagedPrinter, ScanCancelledError, printers } from "./niimbot/connection";
+import type { PrinterCandidate } from "./niimbot/transport";
+import { NIIMBOT_MODELS } from "./niimbot/models";
 import { PrinterRole, ROLE_LABELS, ROLE_ORDER } from "./niimbot/roles";
 import { makeTestImage } from "./niimbot/testImage";
 import {
@@ -71,6 +74,7 @@ export default function Settings() {
   const [savedExtra, setSavedExtra] = useState("");
   const extraDirty = boxExtra !== savedExtra;
   const [boxQr, setBoxQr] = useState<BoxQrContent>(DEFAULT_BOX_QR);
+  const [picker, setPicker] = useState<PrinterCandidate[] | null>(null);
   // Live per-printer size edits (by device id). A printer's draft falls back to
   // its saved size; editing updates the draft, and Save commits it.
   const [sizeDraft, setSizeDraft] = useState<Record<string, LabelSize>>({});
@@ -137,17 +141,41 @@ export default function Settings() {
       log("printers disconnected (not used in this mode)");
     }
   }
-  // Connect an additional printer (scan → first not-yet-connected device).
+  // Connect an additional printer: check Bluetooth + permissions, scan, then
+  // auto-connect a lone printer or let the user pick among several.
   async function addPrinter() {
     setBusy(true);
     try {
+      if ((await printers.bluetoothState()) === "PoweredOff") {
+        Alert.alert("Bluetooth is off", "Turn on Bluetooth, then search for your printer again.");
+        return;
+      }
       if (!(await requestBlePermissions())) {
-        log("permissions denied");
+        Alert.alert(
+          "Bluetooth permission needed",
+          "Moverse needs Bluetooth permission to find printers. Enable it in the system settings, then try again.",
+        );
         return;
       }
       log("scanning for a printer…");
-      const mp = await printers.connectFirstAvailable();
-      log(`connected: ${mp.name} (${mp.model.label})`);
+      const candidates = await printers.scanForNew();
+      if (candidates.length === 0) {
+        Alert.alert(
+          "No printer found",
+          "Check that the printer is powered on, in range, and not already connected to another phone or the NIIMBOT app. Then search again.",
+          [
+            { text: "Search again", onPress: () => void addPrinter() },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
+        return;
+      }
+      if (candidates.length === 1) {
+        const mp = await printers.connectNew(candidates[0].id, candidates[0].name);
+        log(`connected: ${mp.name} (${mp.model.label})`);
+        return;
+      }
+      setPicker(candidates); // several found → let the user choose
     } catch (e) {
       if (e instanceof ScanCancelledError) {
         log("scan cancelled");
@@ -157,6 +185,28 @@ export default function Settings() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function connectPicked(c: PrinterCandidate) {
+    setPicker(null);
+    setBusy(true);
+    try {
+      const mp = await printers.connectNew(c.id, c.name);
+      log(`connected: ${mp.name} (${mp.model.label})`);
+    } catch (e) {
+      log(`connect failed: ${String((e as Error)?.message ?? e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function showSupportedPrinters() {
+    const tested = NIIMBOT_MODELS.filter((m) => m.verified).map((m) => m.label);
+    const detected = NIIMBOT_MODELS.filter((m) => !m.verified).map((m) => m.label);
+    Alert.alert(
+      "Supported printers",
+      `NIIMBOT Bluetooth label printers.\n\nTested: ${tested.join(", ") || "—"}\nDetected (unverified): ${detected.join(", ")}\n\nOther NIIMBOT models may still work using default settings.`,
+    );
   }
   async function disconnectOne(mp: ManagedPrinter) {
     setBusy(true);
@@ -264,7 +314,13 @@ export default function Settings() {
       {/* Printers */}
       <SectionHeader>Printers</SectionHeader>
       {printers.list().length === 0 ? (
-        <Text style={styles.hint}>No printer connected.</Text>
+        <>
+          <Text style={styles.hint}>No printer connected.</Text>
+          <TouchableOpacity onPress={showSupportedPrinters} hitSlop={8} style={styles.logMiniLink}>
+            <Ionicons name="information-circle-outline" size={14} color={colors.mutedFg} />
+            <Text style={styles.logMiniText}>Supported printers</Text>
+          </TouchableOpacity>
+        </>
       ) : (
         printers.list().map((mp) => {
           const isPrinting = printingId === mp.id;
@@ -533,6 +589,37 @@ export default function Settings() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={picker !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setPicker(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Choose a printer</Text>
+              <TouchableOpacity onPress={() => setPicker(null)} hitSlop={8} style={styles.modalAction}>
+                <Ionicons name="close" size={16} color={colors.fg} />
+                <Text style={[styles.modalActionText, { color: colors.fg }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.hint}>Several printers are nearby — strongest signal first.</Text>
+            {(picker ?? []).map((c) => (
+              <TouchableOpacity key={c.id} style={styles.pickerRow} onPress={() => void connectPicked(c)} activeOpacity={0.7}>
+                <Ionicons name="print-outline" size={18} color={colors.accent} />
+                <Text style={styles.pickerName} numberOfLines={1}>{c.name}</Text>
+                <Ionicons
+                  name={c.rssi >= -60 ? "cellular" : c.rssi >= -80 ? "cellular-outline" : "warning-outline"}
+                  size={16}
+                  color={colors.mutedFg}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -596,6 +683,15 @@ const styles = StyleSheet.create({
   savedTagText: { ...t.caption, color: colors.accent, fontWeight: "600" },
   headHint: { ...t.caption, color: colors.mutedFg, marginLeft: space.xs },
   disabledBlock: { opacity: 0.45 },
+  pickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.md,
+    paddingVertical: space.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  pickerName: { ...t.bodyStrong, color: colors.fg, flex: 1 },
   scanRow: {
     flexDirection: "row",
     alignItems: "center",

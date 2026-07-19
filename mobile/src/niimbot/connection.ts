@@ -1,4 +1,5 @@
 import { BleTransport, PrinterCandidate, ScanCancelledError, scanPrinters } from "./transport";
+import { bleManager } from "./ble";
 import { NiimbotClient } from "./client";
 import { NiimbotModel, detectModel, modelById } from "./models";
 import type { LabelSize } from "../labelSettings";
@@ -94,6 +95,17 @@ class PrinterManager {
     this.scanController?.abort();
   }
 
+  // Current Bluetooth adapter state ("PoweredOn" / "PoweredOff" / …).
+  bluetoothState(): Promise<string> {
+    return bleManager().state();
+  }
+
+  // Scan and return only candidates that aren't already connected.
+  async scanForNew(timeoutMs = 6000): Promise<PrinterCandidate[]> {
+    const found = await this.scan(timeoutMs);
+    return found.filter((c) => !this.printers.has(c.id));
+  }
+
   async scan(timeoutMs = 6000): Promise<PrinterCandidate[]> {
     this.scanController = new AbortController();
     this.emit();
@@ -121,6 +133,13 @@ class PrinterManager {
     };
     const resolvedName = await t.connectById(deviceId);
     const client = new NiimbotClient(t, plog);
+    // Confirm we're talking to a real printer (best-effort — don't drop a
+    // working connection if the status reply is slow).
+    try {
+      plog((await client.ping()) ? "handshake ok" : "no handshake reply");
+    } catch {
+      // ignore — proceed; the print path will surface real failures
+    }
     const model = detectModel(name ?? resolvedName);
     const mp = new ManagedPrinter(deviceId, name ?? resolvedName, model, t, client);
     mp.role = this.roles[deviceId] ?? DEFAULT_ROLE;
