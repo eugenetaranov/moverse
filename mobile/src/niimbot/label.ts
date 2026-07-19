@@ -3,8 +3,12 @@ import type { Bitmap } from "./client";
 import { drawText, textWidth, GLYPH_H } from "./font";
 import { LabelSize, labelPx, fitsQr } from "../labelSettings";
 
-// Render an item code to a 1bpp label bitmap sized to the label. Large labels
-// get QR + text; small labels get text only (chosen by fitsQr).
+// Render an item code to a 1bpp label bitmap sized to the label.
+//  - Text is the priority: the code fills the label width, large and readable.
+//  - Big enough labels (fitsQr) also get a QR *below* the text, sized to fit the
+//    width (never overflowing — the old layout scaled the QR to the height and
+//    clipped it on tall narrow labels).
+//  - Small labels are text-only.
 export function renderLabel(code: string, size: LabelSize): Bitmap {
   const { widthPx, heightPx } = labelPx(size);
   const bytesPerRow = Math.ceil(widthPx / 8);
@@ -13,38 +17,38 @@ export function renderLabel(code: string, size: LabelSize): Bitmap {
     if (x < 0 || y < 0 || x >= widthPx || y >= heightPx) return;
     data[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7);
   };
-  const margin = 3;
+  const margin = Math.max(4, Math.round(Math.min(widthPx, heightPx) * 0.06));
+  const tw = textWidth(code); // unscaled px
+
+  // Largest integer scale that fits the code across the width.
+  const textFillW = Math.max(1, Math.floor((widthPx - margin * 2) / tw));
 
   if (fitsQr(size)) {
-    // QR on the left, code text on the right.
+    // Text band on top (cap its height so the QR has room), QR centred below.
+    const textScale = Math.max(1, Math.min(textFillW, Math.floor((heightPx * 0.3) / GLYPH_H)));
+    const textH = GLYPH_H * textScale;
+    drawText(set, code, Math.floor((widthPx - tw * textScale) / 2), margin, textScale);
+
     const qr = qrcode(0, "M");
     qr.addData(code);
     qr.make();
     const n = qr.getModuleCount();
-    const avail = heightPx - margin * 2;
-    const scale = Math.max(1, Math.floor(avail / n));
+    const qrTop = margin + textH + margin;
+    const availW = widthPx - margin * 2;
+    const availH = heightPx - qrTop - margin;
+    const scale = Math.max(1, Math.floor(Math.min(availW, availH) / n));
     const qrSize = n * scale;
-    const qx = margin;
-    const qy = Math.floor((heightPx - qrSize) / 2);
+    const qx = Math.floor((widthPx - qrSize) / 2);
+    const qy = qrTop + Math.max(0, Math.floor((availH - qrSize) / 2));
     for (let r = 0; r < n; r++)
       for (let col = 0; col < n; col++)
         if (qr.isDark(r, col)) {
           for (let dy = 0; dy < scale; dy++)
             for (let dx = 0; dx < scale; dx++) set(qx + col * scale + dx, qy + r * scale + dy);
         }
-
-    const textX = qx + qrSize + 6;
-    const tw = textWidth(code);
-    const sX = Math.max(1, Math.floor((widthPx - textX - margin) / tw));
-    const sY = Math.max(1, Math.floor(avail / GLYPH_H));
-    const s = Math.max(1, Math.min(sX, sY, 4));
-    drawText(set, code, textX, Math.floor((heightPx - GLYPH_H * s) / 2), s);
   } else {
-    // Text only, centred and scaled to fill.
-    const tw = textWidth(code);
-    const sX = Math.max(1, Math.floor((widthPx - margin * 2) / tw));
-    const sY = Math.max(1, Math.floor((heightPx - margin * 2) / GLYPH_H));
-    const s = Math.min(sX, sY);
+    // Text only, centred, as large as fits both dimensions.
+    const s = Math.max(1, Math.min(textFillW, Math.floor((heightPx - margin * 2) / GLYPH_H)));
     drawText(
       set,
       code,
