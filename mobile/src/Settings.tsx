@@ -102,11 +102,25 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       const { widthPx, heightPx } = labelPx(label);
       log(`printing test ${widthPx}x${heightPx}…`);
       await printer.client.printImage(makeTestImage(widthPx, heightPx), 3, 1);
+      log("print done");
     } catch (e) {
-      log(`print failed: ${String((e as Error)?.message ?? e)}`);
+      log(`print stopped: ${String((e as Error)?.message ?? e)}`);
     } finally {
       setBusy(false);
     }
+  }
+
+  // Force-stop a stuck print: ask the loop to abort, then disconnect (which
+  // rejects any hung BLE write so we never get stuck with greyed buttons).
+  async function cancelPrint() {
+    printer.client?.cancel();
+    log("cancelling…");
+    try {
+      await printer.disconnect();
+    } catch {
+      // ignore
+    }
+    setBusy(false);
   }
 
   const assign = mode === "assign";
@@ -162,6 +176,11 @@ export default function Settings({ onClose }: { onClose: () => void }) {
         )}
         <Btn title="Print test label" onPress={printTest} disabled={busy || !printer.connected} />
       </View>
+      {busy ? (
+        <View style={[styles.row, { marginTop: 8 }]}>
+          <Btn title="Cancel" onPress={cancelPrint} />
+        </View>
+      ) : null}
 
       {/* Label size */}
       <Text style={styles.section}>Label size (mm)</Text>

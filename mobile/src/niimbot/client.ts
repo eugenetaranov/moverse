@@ -28,6 +28,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // fire-and-forget with short delays; the final print status is polled.
 export class NiimbotClient {
   private waiters: Array<{ type: number; resolve: (p: NiimbotPacket) => void }> = [];
+  private aborted = false;
+
+  // Ask an in-flight printImage() to stop at the next row.
+  cancel() {
+    this.aborted = true;
+  }
 
   constructor(
     private t: BleTransport,
@@ -61,6 +67,7 @@ export class NiimbotClient {
   }
 
   async printImage(img: Bitmap, density = 3, quantity = 1): Promise<void> {
+    this.aborted = false;
     const bytesPerRow = Math.ceil(img.width / 8);
 
     await this.send(T.SET_DENSITY, [density]);
@@ -77,6 +84,7 @@ export class NiimbotClient {
     await sleep(20);
 
     for (let y = 0; y < img.height; y++) {
+      if (this.aborted) throw new Error("cancelled");
       const row = img.data.subarray(y * bytesPerRow, (y + 1) * bytesPerRow);
       // header: 2-byte row index, 3 count bytes (0 works), 1 repeat count
       const header = [(y >> 8) & 0xff, y & 0xff, 0, 0, 0, 1];
@@ -85,6 +93,11 @@ export class NiimbotClient {
         Uint8Array.from([...header, ...row]),
       ).toBytes();
       await this.t.write(payload);
+      // Yield every row: without-response writes have no ACK, so a tight loop
+      // floods the BLE stack and starves the JS event loop (no re-render). A
+      // real (macrotask) delay drains the queue and lets progress/cancel update.
+      await sleep(3);
+      if (y % 64 === 0) this.log(`row ${y}/${img.height}`);
     }
     this.log(`sent ${img.height} rows`);
 
