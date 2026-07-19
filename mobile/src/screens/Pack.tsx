@@ -30,11 +30,13 @@ import {
   saveMode,
   setOnboarded,
 } from "../labelingMode";
+import qrcode from "qrcode-generator";
 import {
   DEFAULT_LABEL,
   DEFAULT_TUNING,
   LabelSize,
   PrintTuning,
+  fitsQr,
   loadLabelSize,
   loadTuning,
 } from "../labelSettings";
@@ -62,7 +64,8 @@ interface Draft {
 }
 const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photoUri: "", photoBase64: "" };
 
-type Screen = "home" | "capture" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeCode";
+type Screen = "home" | "capture" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeCode" | "label";
+type PrintStatus = "idle" | "printing" | "done" | "failed" | "noprinter";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
 export default function Pack() {
@@ -73,6 +76,7 @@ export default function Pack() {
   const [mode, setModeState] = useState<LabelingMode>(DEFAULT_MODE);
   const [labelSize, setLabelSize] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
+  const [printStatus, setPrintStatus] = useState<PrintStatus>("idle");
 
   const [screen, setScreen] = useState<Screen>("home");
   const [draft, setDraft] = useState<Draft>(EMPTY);
@@ -167,23 +171,19 @@ export default function Pack() {
       setScreen("photo");
       return;
     }
+    await assignCode();
+  }
+
+  // Assign the next code and open the Label screen (shows the code + QR, prints
+  // it if a printer is connected). Keeps any photo already added.
+  async function assignCode() {
     setBusy(true);
     try {
       const code = await reserveCode();
       edit({ itemCode: code });
-      if (printer.connected && printer.client) {
-        try {
-          await printer.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
-          buzzOk();
-          showToast(`Printed ${code}`);
-        } catch {
-          buzzErr();
-          showToast(`Print failed — write ${code}`);
-        }
-        setScreen("photo");
-      } else {
-        setScreen("writeCode");
-      }
+      setPrintStatus("idle");
+      setScreen("label");
+      void printLabel(code);
     } catch (e) {
       Alert.alert("Couldn't get a code", String((e as Error)?.message ?? e));
     } finally {
@@ -191,29 +191,20 @@ export default function Pack() {
     }
   }
 
-  // Assign (and print, if a printer is connected) the next code without going
-  // through the full capture flow — for when a photo was added first.
-  async function assignCode() {
-    setBusy(true);
+  async function printLabel(code = draft.itemCode) {
+    if (!code) return;
+    if (!printer.connected || !printer.client) {
+      setPrintStatus("noprinter");
+      return;
+    }
+    setPrintStatus("printing");
     try {
-      const code = await reserveCode();
-      edit({ itemCode: code });
-      if (printer.connected && printer.client) {
-        try {
-          await printer.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
-          buzzOk();
-          showToast(`Printed ${code}`);
-        } catch {
-          buzzErr();
-          showToast(`Print failed — write ${code}`);
-        }
-      } else {
-        showToast(`Write ${code} on the item`);
-      }
-    } catch (e) {
-      Alert.alert("Couldn't get a code", String((e as Error)?.message ?? e));
-    } finally {
-      setBusy(false);
+      await printer.client.printImage(renderLabel(code, labelSize), tuning.density, tuning.labelType);
+      buzzOk();
+      setPrintStatus("done");
+    } catch {
+      buzzErr();
+      setPrintStatus("failed");
     }
   }
 
@@ -346,6 +337,48 @@ export default function Pack() {
             setScreen("home");
           }}
         />
+      </Center>
+    );
+  if (screen === "label")
+    return (
+      <Center>
+        <Text style={styles.h2}>Label</Text>
+        <Text style={styles.bigCode}>{draft.itemCode}</Text>
+        <View style={{ height: space.md }} />
+        {fitsQr(labelSize) ? (
+          <QrPreview text={draft.itemCode} />
+        ) : (
+          <Text style={styles.bodyCenter}>Text-only label (small stock)</Text>
+        )}
+        <Text style={styles.printStatus}>
+          {printStatus === "printing"
+            ? "Printing…"
+            : printStatus === "done"
+              ? "Printed ✓"
+              : printStatus === "failed"
+                ? "Print failed"
+                : printStatus === "noprinter"
+                  ? "Printer not connected — write it on the item"
+                  : ""}
+        </Text>
+        <View style={{ height: space.md }} />
+        {printer.connected ? (
+          <SecondaryButton
+            title={printStatus === "failed" ? "Retry print" : "Print again"}
+            icon="print-outline"
+            onPress={() => printLabel()}
+            disabled={printStatus === "printing"}
+          />
+        ) : null}
+        <View style={{ height: space.sm }} />
+        <PrimaryButton
+          title="Add photo"
+          icon="camera-outline"
+          onPress={() => setScreen("photo")}
+          style={{ alignSelf: "stretch" }}
+        />
+        <View style={{ height: space.sm }} />
+        <SecondaryButton title="Done" onPress={() => setScreen("home")} />
       </Center>
     );
 
@@ -505,6 +538,38 @@ export default function Pack() {
   );
 }
 
+// On-screen QR preview of what's on the printed label (rendered from the same
+// qrcode-generator matrix used for printing).
+function QrPreview({ text }: { text: string }) {
+  const qr = qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  const cell = Math.max(3, Math.floor(150 / n));
+  const rows = [];
+  for (let r = 0; r < n; r++) {
+    const cells = [];
+    for (let c = 0; c < n; c++) {
+      cells.push(
+        <View
+          key={c}
+          style={{ width: cell, height: cell, backgroundColor: qr.isDark(r, c) ? "#000" : "#fff" }}
+        />,
+      );
+    }
+    rows.push(
+      <View key={r} style={{ flexDirection: "row" }}>
+        {cells}
+      </View>,
+    );
+  }
+  return (
+    <View style={{ backgroundColor: "#fff", padding: 8, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm }}>
+      {rows}
+    </View>
+  );
+}
+
 function Onboarding({ onPick }: { onPick: (m: LabelingMode) => void }) {
   const cards: { m: LabelingMode; icon: IconName; title: string; sub: string }[] = [
     { m: "assign", icon: "print-outline", title: "I have a label printer", sub: "The app assigns & prints a code per item (or shows it to hand-write)." },
@@ -651,6 +716,7 @@ const styles = StyleSheet.create({
   aiRow: { flexDirection: "row", alignItems: "center", marginTop: space.sm },
   aiState: { ...t.caption, color: colors.mutedFg, flex: 1, marginLeft: space.md },
   bodyCenter: { ...t.body, color: colors.mutedFg, textAlign: "center" },
+  printStatus: { ...t.bodyStrong, color: colors.mutedFg, marginTop: space.md, textAlign: "center" },
   fixedBtn: { minWidth: 136 },
   onCard: {
     flexDirection: "row",
