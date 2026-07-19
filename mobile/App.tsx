@@ -333,24 +333,27 @@ export default function App() {
       </Text>
 
       <ScrollView contentContainerStyle={styles.body2} keyboardShouldPersistTaps="handled">
-        <FieldLabel text="Photo" done={draft.photoUri !== ""} />
-        <View style={styles.photoRow}>
+        <TouchableOpacity
+          onPress={() => setScreen("photo")}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={draft.photoUri ? "Change photo" : "Add photo"}
+          style={styles.photoTile}
+        >
           {draft.photoUri ? (
-            <Image source={{ uri: draft.photoUri }} style={styles.thumb} />
+            <>
+              <Image source={{ uri: draft.photoUri }} style={styles.photoImg} />
+              <View style={styles.photoBadge}>
+                <Ionicons name="camera" size={16} color="#fff" />
+              </View>
+            </>
           ) : (
-            <View style={[styles.thumb, styles.thumbEmpty]}>
-              <Ionicons name="image-outline" size={26} color={colors.mutedFg} />
+            <View style={styles.photoEmpty}>
+              <Ionicons name="add" size={30} color={colors.mutedFg} />
+              <Text style={styles.photoEmptyText}>Add photo</Text>
             </View>
           )}
-          <View style={styles.rightCol}>
-            <SecondaryButton
-              title={draft.photoUri ? "Retake" : "Take photo"}
-              icon="camera-outline"
-              onPress={() => setScreen("photo")}
-              style={styles.fixedBtn}
-            />
-          </View>
-        </View>
+        </TouchableOpacity>
 
         {mode !== "none" ? (
           <>
@@ -610,10 +613,31 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   fieldLabelRow: { flexDirection: "row", alignItems: "center", marginTop: space.lg, marginBottom: space.sm },
   fieldLabel: { ...t.label, color: colors.mutedFg },
-  photoRow: { flexDirection: "row", alignItems: "center" },
-  rightCol: { flex: 1, marginLeft: space.md, alignItems: "flex-end" },
-  thumb: { width: 84, height: 84, borderRadius: radius.md, backgroundColor: colors.muted },
-  thumbEmpty: { alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+  photoTile: { width: 104, height: 104, borderRadius: radius.md, marginTop: space.lg, overflow: "hidden" },
+  photoImg: { width: 104, height: 104, borderRadius: radius.md, backgroundColor: colors.muted },
+  photoBadge: {
+    position: "absolute",
+    right: 6,
+    bottom: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(15,23,42,0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoEmpty: {
+    width: 104,
+    height: 104,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoEmptyText: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
   chip: {
     flexDirection: "row",
     alignItems: "center",
