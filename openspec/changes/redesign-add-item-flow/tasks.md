@@ -15,7 +15,7 @@
 
 - [x] 3.1 Add a full-height capture sheet surface to Pack (`flowOpen`), opened by "New item"
 - [x] 3.2 Sheet header: preselected box chip (one-tap change via `SetBox`) + Done/close control
-- [x] 3.3 Camera-forward photo step (reuse `Capture.tsx`), large photo tile. (Single primary photo — pre-save multi-photo deferred; extra photos already supported post-save in item-detail.)
+- [x] 3.3 Camera-forward photo step (reuse `Capture.tsx`): big "Take photo" tile when empty; once photos exist, a horizontal strip of thumbnails each with a ✕ delete badge and a ＋ "Add" tile. On save, the first photo goes via `api.save` and extras are appended with `addItemPhoto` (best-effort).
 - [x] 3.4 Optional description field with inline "Auto-describe" (reuse `describe`); never blocks Save
 - [x] 3.5 Full-width "Save item" pinned at the bottom; photo and description optional, gated only on a box (+ valid code unless none mode)
 

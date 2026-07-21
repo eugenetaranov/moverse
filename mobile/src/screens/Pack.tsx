@@ -38,7 +38,7 @@ import { printBoxLabels, NoBoxPrinter } from "../boxLabelPrint";
 import { printItemLabels, NoItemPrinter } from "../itemLabelPrint";
 import { reserveCode, seedReservation } from "../reservation";
 import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
-import { Box, loadInventory } from "../inventory";
+import { Box, addItemPhoto, loadInventory } from "../inventory";
 import { loadCurrentBox, saveCurrentBox } from "../currentBox";
 import { colors, radius, space, type as t, HIT } from "../theme";
 import {
@@ -52,15 +52,18 @@ import {
 } from "../ui";
 import type { PackStackParamList, RootTabParamList } from "../navTypes";
 
+interface Photo {
+  uri: string;
+  base64: string;
+}
 interface Draft {
   itemCode: string;
   boxCode: string;
   newBox?: boolean; // "No codes" mode: a new box whose BOX-#### is minted at save
   description: string;
-  photoUri: string;
-  photoBase64: string;
+  photos: Photo[];
 }
-const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photoUri: "", photoBase64: "" };
+const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photos: [] };
 
 // A just-saved item kept for the session so its label can be reprinted from the
 // idle screen (e.g. after a jam) without hunting for it in Browse.
@@ -178,11 +181,20 @@ export default function Pack() {
   }
 
   function onCaptureDone(r: CaptureResult) {
-    const patch: Partial<Draft> = { photoUri: r.photoUri, photoBase64: r.photoBase64 };
-    if (r.itemCode) patch.itemCode = r.itemCode;
-    edit(patch);
+    const wasFirst = draft.photos.length === 0;
+    setDraft((d) => ({
+      ...d,
+      photos: [...d.photos, { uri: r.photoUri, base64: r.photoBase64 }],
+      ...(r.itemCode ? { itemCode: r.itemCode } : {}),
+    }));
     setScreen("home"); // returns to the sheet (flowOpen stays true)
-    void autoDescribe(r.photoBase64);
+    // Auto-describe from the first photo only, so adding more doesn't clobber
+    // an already-written description.
+    if (wasFirst && draft.description.trim() === "") void autoDescribe(r.photoBase64);
+  }
+
+  function removePhoto(index: number) {
+    setDraft((d) => ({ ...d, photos: d.photos.filter((_, i) => i !== index) }));
   }
 
   function applyBox(code: string) {
@@ -275,7 +287,7 @@ export default function Pack() {
 
   // Backing out: confirm only if the user entered real input for this item.
   function tryCloseFlow() {
-    const hasInput = draft.photoUri !== "" || draft.description.trim() !== "";
+    const hasInput = draft.photos.length > 0 || draft.description.trim() !== "";
     if (hasInput) {
       Alert.alert("Discard this item?", "The photo and notes for this item will be discarded.", [
         { text: "Keep editing", style: "cancel" },
@@ -420,6 +432,7 @@ export default function Pack() {
   async function doSave() {
     const code = draft.itemCode.trim();
     const box = draft.boxCode.trim();
+    const photos = draft.photos;
     setSaving(true);
     try {
       const res = await save({
@@ -427,23 +440,38 @@ export default function Pack() {
         boxCode: box || undefined,
         newBox: draft.newBox,
         description: draft.description.trim(),
-        imageBase64: draft.photoBase64,
+        imageBase64: photos[0]?.base64 ?? "",
       });
+      // Save takes one photo; upload any extras as additional photos on the
+      // new item. Best-effort — the item is already saved if these fail.
+      let extraFailed = 0;
+      if (res.itemId && photos.length > 1) {
+        for (const p of photos.slice(1)) {
+          try {
+            await addItemPhoto(res.itemId, p.base64);
+          } catch {
+            extraFailed++;
+          }
+        }
+      }
       buzzOk();
       const shown = res.itemCode ?? code;
       const shownBox = res.boxCode ?? box; // may be a server-minted BOX-####
-      showFlash(
-        "success",
+      const base =
         res.action === "exists"
           ? `${shown} already in ${shownBox}`
           : res.action === "added"
             ? `Added ${shown} → ${shownBox}`
-            : `Saved ${shown} → ${shownBox}`,
-      );
+            : `Saved ${shown} → ${shownBox}`;
+      if (extraFailed > 0) {
+        showFlash("error", `${base} — ${extraFailed} extra photo${extraFailed === 1 ? "" : "s"} didn't upload`);
+      } else {
+        showFlash("success", base);
+      }
       if (res.action !== "exists") {
         setCount((c) => c + 1);
         setRecent((r) =>
-          [{ itemCode: shown, description: draft.description.trim(), photoUri: draft.photoUri }, ...r].slice(0, 8),
+          [{ itemCode: shown, description: draft.description.trim(), photoUri: photos[0]?.uri ?? "" }, ...r].slice(0, 8),
         );
       }
       // Hold the (possibly newly-minted) box as the current box and loop back to
@@ -717,6 +745,7 @@ export default function Pack() {
         : printStatus === "failed" || printStatus === "noprinter"
           ? colors.warning
           : colors.mutedFg;
+  const firstPhotoB64 = draft.photos[0]?.base64 ?? "";
 
   return (
     <View style={styles.screen}>
@@ -811,39 +840,64 @@ export default function Pack() {
           </>
         ) : null}
 
-        <TouchableOpacity
-          onPress={() => setScreen("photo")}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={draft.photoUri ? "Change photo" : "Take photo"}
-          style={styles.bigPhotoTile}
-        >
-          {draft.photoUri ? (
-            <>
-              <Image source={{ uri: draft.photoUri }} style={styles.bigPhotoImg} />
-              <View style={styles.photoBadge}>
-                <Ionicons name="camera" size={16} color="#fff" />
-              </View>
-            </>
-          ) : (
+        {draft.photos.length === 0 ? (
+          <TouchableOpacity
+            onPress={() => setScreen("photo")}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Take photo"
+            style={styles.bigPhotoTile}
+          >
             <View style={styles.bigPhotoEmpty}>
               <Ionicons name="camera" size={34} color={colors.primary} />
               <Text style={styles.bigPhotoText}>Take photo</Text>
             </View>
-          )}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.photoStrip}
+            keyboardShouldPersistTaps="handled"
+          >
+            {draft.photos.map((p, i) => (
+              <View key={`${p.uri}-${i}`} style={styles.photoThumbWrap}>
+                <Image source={{ uri: p.uri }} style={styles.photoThumb} />
+                <TouchableOpacity
+                  style={styles.photoDelete}
+                  onPress={() => removePhoto(i)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete photo ${i + 1}`}
+                >
+                  <Ionicons name="close" size={16} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity
+              style={styles.addPhotoTile}
+              onPress={() => setScreen("photo")}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Add another photo"
+            >
+              <Ionicons name="add" size={30} color={colors.primary} />
+              <Text style={styles.addPhotoText}>Add</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
 
         <View style={styles.descHeader}>
           <FieldLabel text="Description / notes (optional)" done={draft.description.trim() !== ""} />
           <TouchableOpacity
-            onPress={() => autoDescribe(draft.photoBase64)}
-            disabled={!draft.photoBase64 || describeState === "loading"}
+            onPress={() => autoDescribe(firstPhotoB64)}
+            disabled={!firstPhotoB64 || describeState === "loading"}
             hitSlop={8}
             style={styles.aiLink}
             accessibilityLabel="Auto-describe from photo"
           >
-            <Ionicons name="sparkles-outline" size={13} color={draft.photoBase64 ? colors.accent : colors.mutedFg} />
-            <Text style={[styles.aiLinkText, { color: draft.photoBase64 ? colors.accent : colors.mutedFg }]}>
+            <Ionicons name="sparkles-outline" size={13} color={firstPhotoB64 ? colors.accent : colors.mutedFg} />
+            <Text style={[styles.aiLinkText, { color: firstPhotoB64 ? colors.accent : colors.mutedFg }]}>
               {describeState === "loading" ? "Describing…" : "Auto-describe"}
             </Text>
           </TouchableOpacity>
@@ -1179,7 +1233,6 @@ const styles = StyleSheet.create({
     marginTop: space.lg,
     overflow: "hidden",
   },
-  bigPhotoImg: { width: "100%", height: 200, borderRadius: radius.md, backgroundColor: colors.muted },
   bigPhotoEmpty: {
     width: "100%",
     height: 200,
@@ -1193,17 +1246,33 @@ const styles = StyleSheet.create({
     gap: space.xs,
   },
   bigPhotoText: { ...t.bodyStrong, color: colors.primary },
-  photoBadge: {
+  photoStrip: { paddingTop: space.lg, gap: space.sm },
+  photoThumbWrap: { width: 120, height: 150 },
+  photoThumb: { width: 120, height: 150, borderRadius: radius.md, backgroundColor: colors.muted },
+  photoDelete: {
     position: "absolute",
-    right: 8,
-    bottom: 8,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "rgba(15,23,42,0.75)",
+    top: 6,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(15,23,42,0.8)",
     alignItems: "center",
     justifyContent: "center",
   },
+  addPhotoTile: {
+    width: 120,
+    height: 150,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  addPhotoText: { ...t.caption, color: colors.primary, fontWeight: "700" },
   inputRow: { flexDirection: "row", alignItems: "center", marginTop: space.sm },
   warn: { color: colors.warning, fontSize: 13, marginTop: space.xs, fontWeight: "600" },
   descHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
