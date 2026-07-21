@@ -59,6 +59,25 @@ The capture sheet SHALL adapt its code step to the active labeling mode: `assign
 - **WHEN** the sheet opens in `none` mode
 - **THEN** no code line is shown, no code is minted on the device, and the server assigns a hidden code at save
 
+### Requirement: Multiple photos per item
+
+The capture sheet SHALL let the user attach more than one photo to an item: an empty state offers a single "Take photo" action, and once a photo exists the sheet SHALL show each photo as a thumbnail with a delete control plus an "add another" control. On save the first photo SHALL be sent with the item and any additional photos SHALL be uploaded as extra photos on the created item (best-effort, without blocking the save result).
+
+#### Scenario: Add another photo
+
+- **WHEN** the item already has at least one photo and the user taps the add-photo control and captures another
+- **THEN** the new photo is appended and shown as an additional thumbnail
+
+#### Scenario: Delete a photo
+
+- **WHEN** the user taps the delete control on a photo thumbnail
+- **THEN** that photo is removed from the item and the others are kept
+
+#### Scenario: Extra photos uploaded on save
+
+- **WHEN** an item with two or more photos is saved
+- **THEN** the first photo is stored with the item on save and the remaining photos are attached to that item afterward
+
 ### Requirement: Save gating
 
 The "Save item" action SHALL be enabled once a box is set and, unless in `none` mode, a valid item code is present; in `assign` mode the label MUST additionally be printed or acknowledged as hand-written (see print-on-open). Photo and description SHALL both be optional and SHALL NOT gate saving. When Save is disabled, the sheet SHALL indicate what is still required.
