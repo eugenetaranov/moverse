@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -32,22 +31,15 @@ import {
   saveMode,
   setOnboarded,
 } from "../labelingMode";
-import qrcode from "qrcode-generator";
-import {
-  DEFAULT_LABEL,
-  DEFAULT_TUNING,
-  LabelSize,
-  PrintTuning,
-  fitsQr,
-  loadLabelSize,
-  loadTuning,
-} from "../labelSettings";
+import { DEFAULT_TUNING, PrintTuning, loadTuning } from "../labelSettings";
 import { printers } from "../niimbot/connection";
 import { renderLabel } from "../niimbot/label";
 import { printBoxLabels, NoBoxPrinter } from "../boxLabelPrint";
+import { printItemLabels, NoItemPrinter } from "../itemLabelPrint";
 import { reserveCode, seedReservation } from "../reservation";
 import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
 import { Box, loadInventory } from "../inventory";
+import { loadCurrentBox, saveCurrentBox } from "../currentBox";
 import { colors, radius, space, type as t, HIT } from "../theme";
 import {
   PrimaryButton,
@@ -70,16 +62,15 @@ interface Draft {
 }
 const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photoUri: "", photoBase64: "" };
 
-type Screen =
-  | "home"
-  | "capture"
-  | "photo"
-  | "scanItem"
-  | "scanBox"
-  | "setBox"
-  | "writeCode"
-  | "writeBox"
-  | "label";
+// A just-saved item kept for the session so its label can be reprinted from the
+// idle screen (e.g. after a jam) without hunting for it in Browse.
+interface RecentItem {
+  itemCode: string;
+  description: string;
+  photoUri: string;
+}
+
+type Screen = "home" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeBox";
 type PrintStatus = "idle" | "printing" | "done" | "failed" | "noprinter";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
@@ -100,19 +91,19 @@ export default function Pack() {
 
   const [onboarded, setOnboardedState] = useState<boolean | null>(null);
   const [mode, setModeState] = useState<LabelingMode>(DEFAULT_MODE);
-  const [labelSize, setLabelSize] = useState<LabelSize>(DEFAULT_LABEL);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
   const [printStatus, setPrintStatus] = useState<PrintStatus>("idle");
 
   const [screen, setScreen] = useState<Screen>("home");
+  const [flowOpen, setFlowOpen] = useState(false); // is the capture sheet up?
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [describeState, setDescribeState] = useState<DescribeState>("idle");
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState("");
   const [count, setCount] = useState(0);
+  const [recent, setRecent] = useState<RecentItem[]>([]);
+  const [idleBoxes, setIdleBoxes] = useState<Box[]>([]);
   const [, force] = useState(0);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [flash, setFlash] = useState<{ kind: "success" | "error"; msg: string } | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -125,50 +116,48 @@ export default function Pack() {
   useEffect(() => {
     isOnboarded().then(setOnboardedState);
     loadMode().then(setModeState);
-    loadLabelSize().then(setLabelSize);
     loadTuning().then(setTuning);
+    loadCurrentBox().then((bc) => {
+      if (bc) setDraft((d) => ({ ...d, boxCode: bc }));
+    });
     void seedReservation();
     void seedBoxReservation();
     void printers.reconnectRemembered();
     return printers.subscribe(() => force((n) => n + 1));
   }, []);
+
+  // Refresh box list for the idle screen (drives "Create first box" first-run).
   useEffect(() => {
-    if (screen === "home") {
-      loadMode().then(setModeState);
-      loadLabelSize().then(setLabelSize);
-      loadTuning().then(setTuning);
+    if (screen === "home" && !flowOpen) {
+      loadInventory(false)
+        .then((inv) => setIdleBoxes(inv.boxes))
+        .catch(() => {});
     }
-  }, [screen]);
+  }, [screen, flowOpen]);
 
   // Settings is a pushed screen (Pack isn't remounted when you come back), so
   // reload the labeling mode + label options every time Pack regains focus —
-  // otherwise the home screen keeps showing the previous mode's UI.
+  // otherwise the screen keeps showing the previous mode's UI.
   useFocusEffect(
     useCallback(() => {
       loadMode().then(setModeState);
-      loadLabelSize().then(setLabelSize);
       loadTuning().then(setTuning);
     }, []),
   );
 
-  // Full-screen surfaces (camera, onboarding, permission gate) should own the
+  // Full-screen surfaces (camera, onboarding, the capture sheet) should own the
   // whole screen, so hide the stack header and the bottom tab bar while any of
   // them is showing.
   useEffect(() => {
-    const immersive = !onboarded || !permission?.granted || screen !== "home";
+    const immersive = !onboarded || !permission?.granted || screen !== "home" || flowOpen;
     navigation.setOptions({ headerShown: !immersive });
     navigation
       .getParent<BottomTabNavigationProp<RootTabParamList>>()
       ?.setOptions({ tabBarStyle: immersive ? { display: "none" } : undefined });
-  }, [navigation, onboarded, permission, screen]);
+  }, [navigation, onboarded, permission, screen, flowOpen]);
 
   function edit(patch: Partial<Draft>) {
     setDraft((d) => ({ ...d, ...patch }));
-  }
-  function showToast(msg: string) {
-    setToast(msg);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(""), 2500);
   }
 
   async function autoDescribe(b64: string) {
@@ -189,7 +178,7 @@ export default function Pack() {
     const patch: Partial<Draft> = { photoUri: r.photoUri, photoBase64: r.photoBase64 };
     if (r.itemCode) patch.itemCode = r.itemCode;
     edit(patch);
-    setScreen("home");
+    setScreen("home"); // returns to the sheet (flowOpen stays true)
     void autoDescribe(r.photoBase64);
   }
 
@@ -201,10 +190,17 @@ export default function Pack() {
       setScreen("home");
       Alert.alert("Switch box?", `Now packing into ${trimmed} instead of ${prev}?`, [
         { text: "Keep " + prev, style: "cancel" },
-        { text: "Switch", onPress: () => edit({ boxCode: trimmed }) },
+        {
+          text: "Switch",
+          onPress: () => {
+            edit({ boxCode: trimmed, newBox: false });
+            void saveCurrentBox(trimmed);
+          },
+        },
       ]);
     } else {
       edit({ boxCode: trimmed, newBox: false });
+      void saveCurrentBox(trimmed);
       setScreen("home");
     }
   }
@@ -221,6 +217,7 @@ export default function Pack() {
     try {
       const code = await reserveBoxCode();
       edit({ boxCode: code, newBox: false });
+      void saveCurrentBox(code);
       if (printers.printerForKind("box")) {
         setScreen("home");
         void printBoxLabel(code);
@@ -234,32 +231,53 @@ export default function Pack() {
     }
   }
 
-  async function startAdd() {
-    if (mode === "scan") {
-      setScreen("capture");
-      return;
-    }
-    if (mode === "none") {
-      setScreen("photo");
-      return;
-    }
-    await assignCode();
-  }
-
-  // Assign the next code and open the Label screen (shows the code + QR, prints
-  // it if a printer is connected). Keeps any photo already added.
-  async function assignCode() {
+  // Mint the next item code and print its label (assign mode). Non-blocking:
+  // printing status is surfaced inline and never gates Save.
+  async function mintAndPrint() {
     setBusy(true);
     try {
       const code = await reserveCode();
-      edit({ itemCode: code });
-      setPrintStatus("idle");
-      setScreen("label");
+      setDraft((d) => ({ ...d, itemCode: code }));
       void printLabel(code);
     } catch (e) {
-      Alert.alert("Couldn't get a code", String((e as Error)?.message ?? e));
+      showFlash("error", `Couldn't get a code. ${String((e as Error)?.message ?? e)}`);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Reset to a fresh item, keeping the current box, and (assign mode) mint +
+  // print its label straight away so the label is ready before the photo.
+  async function beginItem() {
+    setPrintStatus("idle");
+    setDescribeState("idle");
+    setDraft((d) => ({ ...EMPTY, boxCode: d.boxCode, newBox: d.newBox }));
+    if (mode === "assign") await mintAndPrint();
+  }
+
+  // Idle "New item" round button → open the sheet on a fresh item.
+  async function startNewItem() {
+    setFlowOpen(true);
+    await beginItem();
+  }
+
+  function closeFlow() {
+    setFlowOpen(false);
+    setDraft((d) => ({ ...EMPTY, boxCode: d.boxCode, newBox: d.newBox }));
+    setPrintStatus("idle");
+    setDescribeState("idle");
+  }
+
+  // Backing out: confirm only if the user entered real input for this item.
+  function tryCloseFlow() {
+    const hasInput = draft.photoUri !== "" || draft.description.trim() !== "";
+    if (hasInput) {
+      Alert.alert("Discard this item?", "The photo and notes for this item will be discarded.", [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: closeFlow },
+      ]);
+    } else {
+      closeFlow();
     }
   }
 
@@ -283,19 +301,10 @@ export default function Pack() {
     if (!code) return;
     const p = printers.printerForKind("item");
     if (!p) {
+      // Non-blocking: surface the state on the sheet's status line; the user can
+      // tap Connect there. Never wall off the flow behind an alert.
       setPrintStatus("noprinter");
       buzzErr();
-      Alert.alert(
-        printers.connected ? "No printer for item labels" : "Printer not connected",
-        printers.connected
-          ? `No connected printer is set to print item labels. Assign one in Settings, or write ${code} on the item by hand.`
-          : `Can't print label ${code}. Connect a printer to print it, or write the code on the item by hand.`,
-        [
-          { text: "Connect & print", onPress: () => void connectPrinter() },
-          { text: "Write by hand" },
-          { text: "Cancel", style: "cancel" },
-        ],
-      );
       return;
     }
     setPrintStatus("printing");
@@ -311,26 +320,52 @@ export default function Pack() {
       }
       buzzErr();
       setPrintStatus("failed");
-      Alert.alert(
-        "Print failed",
-        `Couldn't print label ${code} — the printer may be busy or out of range. Retry, or write the code by hand.`,
-        [
-          { text: "Retry", onPress: () => void printLabel(code) },
-          { text: "Write by hand" },
-          { text: "Cancel", style: "cancel" },
-        ],
-      );
     }
   }
 
-  // Abort an in-flight item print (label screen). The client aborts between rows
-  // or when the current write times out; the printLabel catch resets to idle.
-  function cancelItemPrint() {
-    printers.printerForKind("item")?.client.cancel();
+  // Reprint a saved item's label from the idle recent list (no new code minted).
+  async function reprintItem(code: string) {
+    if (!code) return;
+    try {
+      const { printed } = await printItemLabels(code, 1);
+      if (printed > 0) buzzOk();
+      else Alert.alert("Not printed", `No label printed for ${code}.`);
+    } catch (e) {
+      if (e instanceof NoItemPrinter) {
+        Alert.alert(
+          printers.connected ? "No printer for item labels" : "Printer not connected",
+          printers.connected
+            ? `No connected printer is set to print item labels. Assign one in Settings, or write ${code} by hand.`
+            : `Connect a printer to reprint ${code}, or write it by hand.`,
+          [
+            { text: "Connect & print", onPress: () => void connectAndReprint(code) },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
+        return;
+      }
+      buzzErr();
+      Alert.alert("Print failed", `Couldn't reprint ${code}. Try again, or write it by hand.`);
+    }
+  }
+
+  async function connectAndReprint(code: string) {
+    setBusy(true);
+    try {
+      if (!(await requestBlePerms())) {
+        Alert.alert("Bluetooth needed", "Grant Bluetooth permission to connect the printer.");
+        return;
+      }
+      await printers.connectFirstAvailable();
+      await reprintItem(code);
+    } catch (e) {
+      Alert.alert("Couldn't connect", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Print a box label (code + QR/text + saved extra text) for a box being set.
-  // Routes to the printer assigned box labels; falls back to a hand-write prompt.
   async function printBoxLabel(code: string) {
     const trimmed = code.trim();
     if (!trimmed) return;
@@ -400,11 +435,20 @@ export default function Pack() {
             ? `Added ${shown} → ${shownBox}`
             : `Saved ${shown} → ${shownBox}`,
       );
-      if (res.action !== "exists") setCount((c) => c + 1);
-      // Hold the (possibly newly-minted) box as the current box; clear the
-      // new-box flag so later items reuse it instead of minting again.
-      setDraft({ ...EMPTY, boxCode: res.boxCode ?? draft.boxCode });
+      if (res.action !== "exists") {
+        setCount((c) => c + 1);
+        setRecent((r) =>
+          [{ itemCode: shown, description: draft.description.trim(), photoUri: draft.photoUri }, ...r].slice(0, 8),
+        );
+      }
+      // Hold the (possibly newly-minted) box as the current box and loop back to
+      // a fresh item, with the next label already printing (assign mode).
+      const nextBox = res.boxCode ?? draft.boxCode;
+      void saveCurrentBox(nextBox);
+      setPrintStatus("idle");
       setDescribeState("idle");
+      setDraft({ ...EMPTY, boxCode: nextBox });
+      if (mode === "assign") await mintAndPrint();
     } catch (e) {
       buzzErr();
       showFlash("error", `Save failed — your entry is kept. ${String((e as Error)?.message ?? e)}`);
@@ -451,8 +495,6 @@ export default function Pack() {
     );
 
   // ---- full-screen surfaces ----
-  if (screen === "capture")
-    return <Capture startPhase="item" onDone={onCaptureDone} onCancel={() => setScreen("home")} />;
   if (screen === "photo")
     return (
       <Capture
@@ -496,31 +538,6 @@ export default function Pack() {
         busy={busy}
       />
     );
-  if (screen === "writeCode")
-    return (
-      <Center>
-        <Ionicons name="create-outline" size={40} color={colors.primary} />
-        <Text style={styles.h2}>Write this on the item</Text>
-        <Text style={styles.bigCode}>{draft.itemCode}</Text>
-        <View style={{ height: space.xl }} />
-        <PrimaryButton
-          title="Done — take photo"
-          icon="arrow-forward"
-          accent
-          onPress={() => setScreen("photo")}
-          style={styles.stretchBtn}
-        />
-        <View style={{ height: space.sm }} />
-        <SecondaryButton
-          title="Cancel"
-          onPress={() => {
-            edit({ itemCode: "" });
-            setScreen("home");
-          }}
-          style={styles.stretchBtn}
-        />
-      </Center>
-    );
   if (screen === "writeBox")
     return (
       <Center>
@@ -546,223 +563,258 @@ export default function Pack() {
         />
       </Center>
     );
-  if (screen === "label")
-    return (
-      <Center>
-        <Text style={styles.h2}>Label</Text>
-        <Text style={styles.bigCode}>{draft.itemCode}</Text>
-        <Text style={styles.bodyCenter}>Stick this label on the item, then add a photo &amp; details.</Text>
-        <View style={{ height: space.md }} />
-        {fitsQr(printers.printerForKind("item")?.labelSize ?? labelSize) ? (
-          <QrPreview text={draft.itemCode} />
-        ) : (
-          <Text style={styles.bodyCenter}>Text-only label (small stock)</Text>
-        )}
-        <Text
-          style={[
-            styles.printStatus,
-            printStatus === "done" && { color: colors.accent },
-            (printStatus === "failed" || printStatus === "noprinter") && { color: colors.warning },
-          ]}
-        >
-          {printStatus === "printing"
-            ? "Printing…"
-            : printStatus === "done"
-              ? "Printed ✓"
-              : printStatus === "failed"
-                ? "Print failed"
-                : printStatus === "noprinter"
-                  ? "Printer not connected — write it on the item"
-                  : ""}
-        </Text>
-        <View style={{ height: space.md }} />
-        {printStatus === "printing" ? (
-          <SecondaryButton
-            title="Cancel print"
-            icon="close"
-            tone="danger"
-            onPress={cancelItemPrint}
-            style={styles.stretchBtn}
-          />
-        ) : printers.printerForKind("item") ? (
-          <SecondaryButton
-            title={printStatus === "failed" ? "Retry print" : "Print again"}
-            icon="print-outline"
-            onPress={() => printLabel()}
-            disabled={busy}
-            style={styles.stretchBtn}
-          />
-        ) : (
-          <PrimaryButton
-            title={busy ? "Connecting…" : "Connect printer & print"}
-            icon="bluetooth"
-            onPress={connectPrinter}
-            disabled={busy}
-            style={styles.stretchBtn}
-          />
-        )}
-        <View style={{ height: space.sm }} />
-        <PrimaryButton
-          title="Next — take photo"
-          icon="camera-outline"
-          accent
-          onPress={() => setScreen("photo")}
-          style={styles.stretchBtn}
-        />
-        <View style={{ height: space.sm }} />
-        <SecondaryButton title="Skip — go to item" onPress={() => setScreen("home")} style={styles.stretchBtn} />
-      </Center>
-    );
 
-  // ---- home hub ----
+  // ---- derived ----
   const itemBad = draft.itemCode.trim() !== "" && classify(draft.itemCode) !== "item";
   const itemOk = draft.itemCode.trim() !== "" && !itemBad;
-  // A new codeless box (none mode) has no code yet but is a valid target — the
-  // server mints its BOX-#### at save.
   const boxOk = draft.boxCode.trim() !== "" || !!draft.newBox;
-  const descOk = draft.description.trim() !== "";
+  const hasPhoto = draft.photoUri !== "";
   const needCode = mode !== "none";
-  const draftEmpty = draft.itemCode.trim() === "" && draft.photoUri === "";
-  const canSave = !saving && boxOk && descOk && (!needCode || itemOk);
+  const canSave = !saving && boxOk && hasPhoto && (!needCode || itemOk);
+  const boxLabel =
+    draft.newBox && !draft.boxCode.trim()
+      ? "New box — code on save"
+      : boxOk
+        ? draft.boxCode.trim()
+        : "Choose box";
+  const hasAnyBox = idleBoxes.length > 0 || boxOk;
 
-  const photoTile = (
-    <TouchableOpacity
-      onPress={() => setScreen("photo")}
-      activeOpacity={0.85}
-      accessibilityRole="button"
-      accessibilityLabel={draft.photoUri ? "Change photo" : "Add photo"}
-      style={styles.photoTile}
-    >
-      {draft.photoUri ? (
-        <>
-          <Image source={{ uri: draft.photoUri }} style={styles.photoImg} />
-          <View style={styles.photoBadge}>
-            <Ionicons name="camera" size={16} color="#fff" />
+  // ---- idle screen ----
+  if (!flowOpen) {
+    return (
+      <View style={styles.screen}>
+        <TouchableOpacity
+          style={[styles.chipRow, boxOk ? styles.chipRowOk : styles.chipRowWarn]}
+          onPress={() => setScreen("setBox")}
+          activeOpacity={0.85}
+        >
+          <View style={styles.bannerLeft}>
+            <Ionicons name="cube-outline" size={20} color={colors.onPrimary} />
+            <Text style={styles.bannerText} numberOfLines={1}>
+              {boxOk ? `Packing into ${boxLabel}` : "No box yet"}
+            </Text>
           </View>
-        </>
-      ) : (
-        <View style={styles.photoEmpty}>
-          <Ionicons name="add" size={30} color={colors.mutedFg} />
-          <Text style={styles.photoEmptyText}>Add photo</Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+          <Text style={styles.bannerAction}>{boxOk ? "Change" : "Set"}</Text>
+        </TouchableOpacity>
+        <Text style={[styles.status, styles.statusIdle]}>{count > 0 ? `${count} packed` : "Ready"}</Text>
 
-  const printStatusLine =
+        <ScrollView contentContainerStyle={styles.recentBody}>
+          {recent.length === 0 ? (
+            <View style={styles.emptyRecent}>
+              <Ionicons name="albums-outline" size={30} color={colors.mutedFg} />
+              <Text style={styles.emptyRecentText}>
+                Items you pack this session appear here — tap the printer to reprint a label.
+              </Text>
+            </View>
+          ) : (
+            recent.map((it, i) => (
+              <View key={`${it.itemCode}-${i}`} style={styles.recentRow}>
+                {it.photoUri ? (
+                  <Image source={{ uri: it.photoUri }} style={styles.recentThumb} />
+                ) : (
+                  <View style={[styles.recentThumb, styles.recentThumbEmpty]}>
+                    <Ionicons name="image-outline" size={18} color={colors.mutedFg} />
+                  </View>
+                )}
+                <View style={styles.recentInfo}>
+                  {mode !== "none" && it.itemCode ? (
+                    <Text style={styles.recentCode} numberOfLines={1}>
+                      {it.itemCode}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.recentDesc} numberOfLines={mode !== "none" && it.itemCode ? 1 : 2}>
+                    {it.description || "No description"}
+                  </Text>
+                </View>
+                {mode !== "none" && it.itemCode ? (
+                  <TouchableOpacity
+                    style={styles.recentReprint}
+                    onPress={() => void reprintItem(it.itemCode)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Reprint label ${it.itemCode}`}
+                  >
+                    <Ionicons name="print-outline" size={20} color={colors.primary} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ))
+          )}
+        </ScrollView>
+
+        <View style={styles.fab}>
+          {hasAnyBox ? (
+            <TouchableOpacity
+              style={[styles.roundBtn, busy && styles.btnDisabled]}
+              onPress={() => void startNewItem()}
+              disabled={busy}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="New item"
+            >
+              <Ionicons name="add" size={40} color={colors.onPrimary} />
+              <Text style={styles.roundBtnText}>New item</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.roundBtn}
+              onPress={() => setScreen("setBox")}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Create first box"
+            >
+              <Ionicons name="cube" size={36} color={colors.onPrimary} />
+              <Text style={styles.roundBtnText}>Create{"\n"}first box</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {flash ? (
+          <View style={styles.saveOverlay} pointerEvents="none">
+            <View style={styles.saveCard}>
+              <View style={[styles.flashCircle, flash.kind === "success" ? styles.flashOk : styles.flashErr]}>
+                <Ionicons name={flash.kind === "success" ? "checkmark" : "close"} size={40} color="#fff" />
+              </View>
+              <Text style={styles.saveOverlayText}>{flash.msg}</Text>
+            </View>
+          </View>
+        ) : null}
+        <StatusBar style="dark" />
+      </View>
+    );
+  }
+
+  // ---- capture sheet ----
+  const printStatusText =
+    printStatus === "printing"
+      ? "Printing…"
+      : printStatus === "done"
+        ? "Printed ✓"
+        : printStatus === "noprinter"
+          ? "No printer — will print when connected"
+          : printStatus === "failed"
+            ? "Print failed"
+            : busy
+              ? "Preparing…"
+              : "";
+  const printStatusColor =
     printStatus === "done"
-      ? { text: "Printed", color: colors.accent }
-      : printStatus === "printing"
-        ? { text: "Printing…", color: colors.mutedFg }
-        : printStatus === "failed"
-          ? { text: "Print failed — tap to retry", color: colors.warning }
-          : { text: "Not printed", color: colors.mutedFg };
+      ? colors.accent
+      : printStatus === "failed" || printStatus === "noprinter"
+        ? colors.warning
+        : colors.mutedFg;
 
   return (
     <View style={styles.screen}>
-      <TouchableOpacity
-        style={[styles.banner, boxOk ? styles.bannerOk : styles.bannerWarn]}
-        onPress={() => setScreen("setBox")}
-        activeOpacity={0.85}
-      >
-        <View style={styles.bannerLeft}>
-          <Ionicons name="cube-outline" size={20} color={colors.onPrimary} />
-          <Text style={styles.bannerText} numberOfLines={1}>
-            {draft.newBox && !draft.boxCode.trim()
-              ? "New box — code on save"
-              : boxOk
-                ? `Packing into ${draft.boxCode.trim()}`
-                : "No box — tap to set"}
+      <View style={styles.sheetHeader}>
+        <TouchableOpacity
+          style={styles.boxChip}
+          onPress={() => setScreen("setBox")}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Change box"
+        >
+          <Ionicons name="cube-outline" size={18} color={colors.primary} />
+          <Text style={styles.boxChipText} numberOfLines={1}>
+            Into {boxLabel}
           </Text>
-        </View>
-        <Text style={styles.bannerAction}>{boxOk ? "Change" : "Set"}</Text>
-      </TouchableOpacity>
-      <Text style={[styles.status, toast ? styles.statusToast : styles.statusIdle]}>
-        {toast || (count > 0 ? `${count} packed` : "Ready")}
-      </Text>
+          <Ionicons name="chevron-down" size={16} color={colors.mutedFg} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.closeBtn}
+          onPress={tryCloseFlow}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Done"
+        >
+          <Ionicons name="close" size={22} color={colors.mutedFg} />
+        </TouchableOpacity>
+      </View>
 
       <ScrollView contentContainerStyle={styles.body2} keyboardShouldPersistTaps="handled">
         {mode === "assign" ? (
-          // Photo + code as the item's "identity" pair, side by side.
-          <View style={styles.identityRow}>
-            {photoTile}
-            <View style={styles.identityCol}>
-              <FieldLabel text="Item code" done={itemOk} />
-              {draft.itemCode ? (
-                // Assigned: the code as a value (not a button) + reprint.
-                <>
-                  <View style={styles.codeValueRow}>
-                    <Ionicons name="pricetag-outline" size={18} color={colors.accent} />
-                    <Text style={styles.codeValue} numberOfLines={1}>
-                      {draft.itemCode}
-                    </Text>
-                    <View style={{ flex: 1 }} />
-                    <TouchableOpacity
-                      style={styles.reprintBtn}
-                      onPress={() => printLabel(draft.itemCode)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Reprint label ${draft.itemCode}`}
-                    >
-                      <Ionicons name="print-outline" size={20} color={colors.primary} />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={[styles.codeStatus, { color: printStatusLine.color }]}>
-                    {printStatusLine.text}
-                  </Text>
-                </>
+          <View style={styles.codeCard}>
+            <View style={styles.codeValueRow}>
+              <Ionicons name="pricetag-outline" size={18} color={colors.accent} />
+              <Text style={styles.codeValue} numberOfLines={1}>
+                {draft.itemCode || "…"}
+              </Text>
+              <View style={{ flex: 1 }} />
+              {printStatus === "printing" ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : printStatus === "noprinter" ? (
+                <TouchableOpacity style={styles.inlineBtn} onPress={() => void connectPrinter()} disabled={busy}>
+                  <Ionicons name="bluetooth" size={15} color={colors.primary} />
+                  <Text style={styles.inlineBtnText}>Connect</Text>
+                </TouchableOpacity>
+              ) : printStatus === "failed" ? (
+                <TouchableOpacity style={styles.inlineBtn} onPress={() => void printLabel(draft.itemCode)}>
+                  <Ionicons name="refresh" size={15} color={colors.primary} />
+                  <Text style={styles.inlineBtnText}>Retry</Text>
+                </TouchableOpacity>
               ) : (
-                // No code yet: an action button, not a field.
                 <TouchableOpacity
-                  style={[styles.assignPill, busy && styles.btnDisabled]}
-                  onPress={assignCode}
-                  disabled={busy}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel="Assign and print an item code"
+                  style={styles.inlineBtn}
+                  onPress={() => void printLabel(draft.itemCode)}
+                  disabled={!draft.itemCode}
                 >
-                  {busy ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <Ionicons name="print-outline" size={18} color={colors.primary} />
-                  )}
-                  <Text style={styles.assignPillText}>{busy ? "Assigning…" : "Assign & print"}</Text>
+                  <Ionicons name="print-outline" size={16} color={colors.primary} />
+                  <Text style={styles.inlineBtnText}>Reprint</Text>
                 </TouchableOpacity>
               )}
             </View>
-          </View>
-        ) : (
-          // scan: photo, then the real code input; none: photo only.
-          <>
-            {photoTile}
-            {mode === "scan" ? (
-              <>
-                <FieldLabel text="Item code" done={itemOk} />
-                <View style={styles.inputRow}>
-                  <TextField
-                    style={styles.flex}
-                    invalid={itemBad}
-                    value={draft.itemCode}
-                    onChangeText={(v) => edit({ itemCode: v })}
-                    placeholder={`${ITEM_PREFIX}0001`}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                  />
-                  <View style={{ width: space.sm }} />
-                  <SecondaryButton
-                    title="Scan"
-                    icon="qr-code-outline"
-                    onPress={() => setScreen("scanItem")}
-                    style={styles.fixedBtn}
-                  />
-                </View>
-                {itemBad ? <Text style={styles.warn}>Expected an {ITEM_PREFIX} code</Text> : null}
-              </>
+            {printStatusText ? (
+              <Text style={[styles.codeStatus, { color: printStatusColor }]}>{printStatusText}</Text>
             ) : null}
+          </View>
+        ) : mode === "scan" ? (
+          <>
+            <FieldLabel text="Item code" done={itemOk} />
+            <View style={styles.inputRow}>
+              <TextField
+                style={styles.flex}
+                invalid={itemBad}
+                value={draft.itemCode}
+                onChangeText={(v) => edit({ itemCode: v })}
+                placeholder={`${ITEM_PREFIX}0001`}
+                autoCapitalize="characters"
+                autoCorrect={false}
+              />
+              <View style={{ width: space.sm }} />
+              <SecondaryButton
+                title="Scan"
+                icon="qr-code-outline"
+                onPress={() => setScreen("scanItem")}
+                style={styles.fixedBtn}
+              />
+            </View>
+            {itemBad ? <Text style={styles.warn}>Expected an {ITEM_PREFIX} code</Text> : null}
           </>
-        )}
+        ) : null}
+
+        <TouchableOpacity
+          onPress={() => setScreen("photo")}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={draft.photoUri ? "Change photo" : "Take photo"}
+          style={styles.bigPhotoTile}
+        >
+          {draft.photoUri ? (
+            <>
+              <Image source={{ uri: draft.photoUri }} style={styles.bigPhotoImg} />
+              <View style={styles.photoBadge}>
+                <Ionicons name="camera" size={16} color="#fff" />
+              </View>
+            </>
+          ) : (
+            <View style={styles.bigPhotoEmpty}>
+              <Ionicons name="camera" size={34} color={colors.primary} />
+              <Text style={styles.bigPhotoText}>Take photo</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.descHeader}>
-          <FieldLabel text="Description / notes" done={descOk} />
+          <FieldLabel text="Description / notes (optional)" done={draft.description.trim() !== ""} />
           <TouchableOpacity
             onPress={() => autoDescribe(draft.photoBase64)}
             disabled={!draft.photoBase64 || describeState === "loading"}
@@ -770,11 +822,7 @@ export default function Pack() {
             style={styles.aiLink}
             accessibilityLabel="Auto-describe from photo"
           >
-            <Ionicons
-              name="sparkles-outline"
-              size={13}
-              color={draft.photoBase64 ? colors.accent : colors.mutedFg}
-            />
+            <Ionicons name="sparkles-outline" size={13} color={draft.photoBase64 ? colors.accent : colors.mutedFg} />
             <Text style={[styles.aiLinkText, { color: draft.photoBase64 ? colors.accent : colors.mutedFg }]}>
               {describeState === "loading" ? "Describing…" : "Auto-describe"}
             </Text>
@@ -793,42 +841,26 @@ export default function Pack() {
         ) : null}
       </ScrollView>
 
-      {!draftEmpty && !canSave && !saving ? (
+      {!canSave && !saving ? (
         <Text style={styles.saveHint}>
-          Add{" "}
-          {[!boxOk && "a box", needCode && !itemOk && "a code", !descOk && "a description"]
-            .filter(Boolean)
-            .join(", ")}{" "}
-          to save
+          {!hasPhoto
+            ? "Add a photo to save"
+            : !boxOk
+              ? "Choose a box to save"
+              : needCode && !itemOk
+                ? "Add the item code to save"
+                : ""}
         </Text>
       ) : null}
       <View style={styles.actionBar}>
-        {draftEmpty ? (
-          <PrimaryButton
-            title={busy ? "Working…" : "Add item"}
-            icon="add"
-            onPress={startAdd}
-            disabled={busy || !boxOk}
-            style={styles.flex}
-          />
-        ) : (
-          <PrimaryButton
-            title={
-              saving
-                ? "Saving…"
-                : draft.boxCode.trim()
-                  ? `Save → ${draft.boxCode.trim()}`
-                  : draft.newBox
-                    ? "Save → new box"
-                    : "Save"
-            }
-            icon="checkmark"
-            accent
-            onPress={doSave}
-            disabled={!canSave}
-            style={styles.flex}
-          />
-        )}
+        <PrimaryButton
+          title={saving ? "Saving…" : "Save item"}
+          icon="checkmark"
+          accent
+          onPress={doSave}
+          disabled={!canSave}
+          style={styles.flex}
+        />
       </View>
 
       {saving || flash ? (
@@ -850,38 +882,6 @@ export default function Pack() {
       ) : null}
 
       <StatusBar style="dark" />
-    </View>
-  );
-}
-
-// On-screen QR preview of what's on the printed label (rendered from the same
-// qrcode-generator matrix used for printing).
-function QrPreview({ text }: { text: string }) {
-  const qr = qrcode(0, "M");
-  qr.addData(text);
-  qr.make();
-  const n = qr.getModuleCount();
-  const cell = Math.max(3, Math.floor(150 / n));
-  const rows = [];
-  for (let r = 0; r < n; r++) {
-    const cells = [];
-    for (let c = 0; c < n; c++) {
-      cells.push(
-        <View
-          key={c}
-          style={{ width: cell, height: cell, backgroundColor: qr.isDark(r, c) ? "#000" : "#fff" }}
-        />,
-      );
-    }
-    rows.push(
-      <View key={r} style={{ flexDirection: "row" }}>
-        {cells}
-      </View>,
-    );
-  }
-  return (
-    <View style={{ backgroundColor: "#fff", padding: 8, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm }}>
-      {rows}
     </View>
   );
 }
@@ -1038,7 +1038,7 @@ const styles = StyleSheet.create({
   h1: { ...t.h1, color: colors.fg, textAlign: "center", marginBottom: space.xs },
   h2: { ...t.h2, color: colors.fg, textAlign: "center", marginTop: space.sm, marginBottom: space.sm },
   bigCode: { fontSize: 40, fontWeight: "900", letterSpacing: 2, color: colors.fg },
-  banner: {
+  chipRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1047,60 +1047,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     borderRadius: radius.md,
   },
+  chipRowOk: { backgroundColor: colors.primary },
+  chipRowWarn: { backgroundColor: colors.warning },
   bannerLeft: { flexDirection: "row", alignItems: "center", flex: 1, marginRight: space.sm },
-  bannerOk: { backgroundColor: colors.primary },
-  bannerWarn: { backgroundColor: colors.warning },
   bannerText: { ...t.title, color: colors.onPrimary, marginLeft: space.sm, flexShrink: 1 },
   bannerAction: { fontSize: 14, fontWeight: "700", color: colors.onPrimary },
   status: { ...t.caption, fontWeight: "600", marginTop: space.sm, marginBottom: space.xs, marginHorizontal: space.lg },
-  statusToast: { color: colors.accent },
   statusIdle: { color: colors.mutedFg },
-  body2: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xl },
-  flex: { flex: 1 },
-  fieldLabelRow: { flexDirection: "row", alignItems: "center", marginTop: space.lg, marginBottom: space.sm },
-  fieldLabel: { ...t.label, color: colors.mutedFg },
-  photoTile: { width: 104, height: 104, borderRadius: radius.md, marginTop: space.lg, overflow: "hidden" },
-  photoImg: { width: 104, height: 104, borderRadius: radius.md, backgroundColor: colors.muted },
-  photoBadge: {
-    position: "absolute",
-    right: 6,
-    bottom: 6,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(15,23,42,0.75)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  photoEmpty: {
-    width: 104,
-    height: 104,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderStyle: "dashed",
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  photoEmptyText: { ...t.caption, color: colors.mutedFg, marginTop: 2 },
-  identityRow: { flexDirection: "row", alignItems: "flex-start", gap: space.md },
-  identityCol: { flex: 1, minHeight: 104 },
-  assignPill: {
+  recentBody: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xl, flexGrow: 1 },
+  emptyRecent: { alignItems: "center", justifyContent: "center", paddingVertical: space.xxl, gap: space.sm },
+  emptyRecentText: { ...t.body, color: colors.mutedFg, textAlign: "center", paddingHorizontal: space.xl },
+  recentRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    minHeight: 52,
+    backgroundColor: colors.surface,
     borderRadius: radius.md,
-    backgroundColor: colors.muted,
-    paddingHorizontal: space.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: space.sm,
+    marginBottom: space.sm,
   },
-  assignPillText: { ...t.bodyStrong, color: colors.primary },
-  codeValueRow: { flexDirection: "row", alignItems: "center" },
-  codeValue: { fontSize: 20, fontWeight: "800", letterSpacing: 0.5, color: colors.fg, marginLeft: 6 },
-  codeStatus: { ...t.caption, marginTop: space.xs },
-  reprintBtn: {
+  recentThumb: { width: 48, height: 48, borderRadius: radius.sm, backgroundColor: colors.muted },
+  recentThumbEmpty: { alignItems: "center", justifyContent: "center" },
+  recentInfo: { flex: 1, marginLeft: space.md, marginRight: space.sm },
+  recentCode: { ...t.bodyStrong, color: colors.fg },
+  recentDesc: { ...t.caption, color: colors.mutedFg },
+  recentReprint: {
     width: 44,
     height: 44,
     borderRadius: radius.sm,
@@ -1108,29 +1080,109 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  chip: {
+  fab: {
+    alignItems: "center",
+    paddingBottom: space.xxl,
+    paddingTop: space.md,
+  },
+  roundBtn: {
+    width: 148,
+    height: 148,
+    borderRadius: 74,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  roundBtnText: { color: colors.onPrimary, fontSize: 17, fontWeight: "800", textAlign: "center" },
+  body2: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xl },
+  flex: { flex: 1 },
+  sheetHeader: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
+    justifyContent: "space-between",
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
+    gap: space.md,
+  },
+  boxChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: 6,
     backgroundColor: colors.muted,
-    borderRadius: radius.sm,
+    borderRadius: radius.md,
     paddingVertical: space.md,
     paddingHorizontal: space.md,
   },
-  chipText: { ...t.bodyStrong, color: colors.fg, marginLeft: space.sm },
-  inputRow: { flexDirection: "row", alignItems: "center" },
-  input: {
+  boxChipText: { ...t.bodyStrong, color: colors.fg, flexShrink: 1 },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.muted,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  codeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    minHeight: HIT,
-    fontSize: 16,
-    color: colors.fg,
-    backgroundColor: colors.surface,
+    padding: space.md,
+    marginTop: space.sm,
   },
-  multiline: { minHeight: 76, paddingTop: space.md, paddingBottom: space.md, textAlignVertical: "top" },
-  inputBad: { borderColor: colors.warning, backgroundColor: colors.warningBg },
+  codeValueRow: { flexDirection: "row", alignItems: "center" },
+  codeValue: { fontSize: 20, fontWeight: "800", letterSpacing: 0.5, color: colors.fg, marginLeft: 6 },
+  codeStatus: { ...t.caption, marginTop: space.xs },
+  inlineBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: space.md,
+    borderRadius: radius.sm,
+    backgroundColor: colors.muted,
+  },
+  inlineBtnText: { ...t.caption, color: colors.primary, fontWeight: "700" },
+  bigPhotoTile: {
+    width: "100%",
+    height: 200,
+    borderRadius: radius.md,
+    marginTop: space.lg,
+    overflow: "hidden",
+  },
+  bigPhotoImg: { width: "100%", height: 200, borderRadius: radius.md, backgroundColor: colors.muted },
+  bigPhotoEmpty: {
+    width: "100%",
+    height: 200,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: space.xs,
+  },
+  bigPhotoText: { ...t.bodyStrong, color: colors.primary },
+  photoBadge: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(15,23,42,0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inputRow: { flexDirection: "row", alignItems: "center", marginTop: space.sm },
   warn: { color: colors.warning, fontSize: 13, marginTop: space.xs, fontWeight: "600" },
   descHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   aiLink: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -1172,50 +1224,7 @@ const styles = StyleSheet.create({
   dropdownName: { ...t.caption, color: colors.mutedFg },
   dropdownCount: { ...t.caption, color: colors.mutedFg, fontWeight: "600" },
   orText: { ...t.caption, color: colors.mutedFg, textAlign: "center", marginTop: space.lg, marginBottom: space.sm },
-  printStatus: { ...t.bodyStrong, color: colors.mutedFg, marginTop: space.md, textAlign: "center" },
-  fixedBtn: { minWidth: 136 },
-  onCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "stretch",
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: space.lg,
-    marginBottom: space.md,
-  },
-  onIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.muted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  onTitle: { ...t.title, color: colors.fg },
-  onSub: { ...t.caption, color: colors.mutedFg, marginTop: 3 },
-  primaryBtn: {
-    flexDirection: "row",
-    backgroundColor: colors.primary,
-    minHeight: 56,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  accentBtn: { backgroundColor: colors.accent },
-  primaryBtnText: { color: colors.onPrimary, fontSize: 17, fontWeight: "700" },
-  secondaryBtn: {
-    flexDirection: "row",
-    backgroundColor: colors.muted,
-    minHeight: HIT,
-    paddingHorizontal: space.lg,
-    borderRadius: radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  secondaryBtnText: { color: colors.fg, fontSize: 15, fontWeight: "600" },
+  fixedBtn: { minWidth: 120 },
   btnDisabled: { opacity: 0.4 },
   actionBar: {
     flexDirection: "row",
