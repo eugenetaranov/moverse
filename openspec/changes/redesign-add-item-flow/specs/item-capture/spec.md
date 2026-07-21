@@ -24,6 +24,11 @@ The app SHALL present the capture flow as a single full-height sheet (not a mult
 - **WHEN** the user tries to leave the sheet after entering real input (a photo taken or description typed)
 - **THEN** a discard confirmation is shown before the in-progress item is dropped
 
+#### Scenario: Discarded code is reused
+
+- **WHEN** an assign-mode item whose code was minted on open (e.g. `ITM-0068`) is discarded without saving
+- **THEN** the reserved number is returned so the next item reuses it (the next code is `ITM-0068`, not `ITM-0069`)
+
 ## ADDED Requirements
 
 ### Requirement: Print-on-open item label (assign mode)

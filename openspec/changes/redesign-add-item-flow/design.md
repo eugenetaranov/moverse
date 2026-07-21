@@ -36,7 +36,7 @@ This redesign was shaped by a UX consultation. Two decisions were made by the us
 
 ## Risks / Trade-offs
 
-- **Wasted label/code on abandonment (from print-on-open)** → Accept as cheaper than an extra tap per item. On discard with only an auto-printed label and no human input, close silently; reclaim/void the reserved code per the existing reservation flow if supported, otherwise tolerate a sequence gap as today.
+- **Wasted label/code on abandonment (from print-on-open)** → Accept the wasted sticker as cheaper than an extra tap per item. The reserved item *number* is reclaimed on discard (`releaseCode` hands the last-minted code back to the counter), so discarding `ITM-0068` leaves the next item as `ITM-0068` rather than skipping to `0069` — no gap in the sequence. On discard with only an auto-printed label and no human input, close silently.
 - **First item of a session / after restart has no "previous box"** → Persist current box across restarts; on genuine first-run with zero boxes, the round button becomes "Create first box" and the capture flow is unreachable until a box exists.
 - **Round FAB reads as a "secondary add" affordance** → Mitigated by making it the sole, centered, prominent action on an otherwise minimal screen (user chose this over a full-width bar).
 - **Blank items in the fast loop (photo + description both optional)** → Accepted for speed; in assign/scan modes the item still carries a code, so it isn't truly empty. In `none` mode a box-only item is possible — tolerated as the cost of a frictionless loop; success flash + `Done` keep the loop escapable.
