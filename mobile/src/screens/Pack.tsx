@@ -36,7 +36,7 @@ import { printers } from "../niimbot/connection";
 import { renderLabel } from "../niimbot/label";
 import { printBoxLabels, NoBoxPrinter } from "../boxLabelPrint";
 import { printItemLabels, NoItemPrinter } from "../itemLabelPrint";
-import { reserveCode, seedReservation } from "../reservation";
+import { reserveCode, releaseCode, seedReservation } from "../reservation";
 import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
 import { Box, addItemPhoto, loadInventory } from "../inventory";
 import { loadCurrentBox, saveCurrentBox } from "../currentBox";
@@ -112,6 +112,7 @@ export default function Pack() {
   const [, force] = useState(0);
   const [flash, setFlash] = useState<{ kind: "success" | "error"; msg: string } | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoScrollRef = useRef<ScrollView>(null);
 
   function showFlash(kind: "success" | "error", msg: string) {
     setFlash({ kind, msg });
@@ -278,6 +279,9 @@ export default function Pack() {
   }
 
   function closeFlow() {
+    // The item was never saved — hand its reserved code back so the next item
+    // reuses that number (assign mode mints a code on open).
+    if (mode === "assign" && draft.itemCode.trim()) releaseCode(draft.itemCode.trim());
     setFlowOpen(false);
     setDraft((d) => ({ ...EMPTY, boxCode: d.boxCode, newBox: d.newBox }));
     setPrintStatus("idle");
@@ -855,10 +859,15 @@ export default function Pack() {
           </TouchableOpacity>
         ) : (
           <ScrollView
+            ref={photoScrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.photoStrip}
             keyboardShouldPersistTaps="handled"
+            // Keep the ＋ tile in view as photos are added; the strip scrolls to
+            // the end, leaving the previous photo peeking on the left to signal
+            // there's more to the left.
+            onContentSizeChange={() => photoScrollRef.current?.scrollToEnd({ animated: true })}
           >
             {draft.photos.map((p, i) => (
               <View key={`${p.uri}-${i}`} style={styles.photoThumbWrap}>
@@ -916,15 +925,22 @@ export default function Pack() {
       </ScrollView>
 
       {!canSave && !saving ? (
-        <Text style={styles.saveHint}>
-          {!boxOk
-            ? "Choose a box to save"
-            : needCode && !itemOk
-              ? "Add the item code to save"
-              : !labelReady
-                ? "Print the label (or write the code by hand) to save"
-                : ""}
-        </Text>
+        <View style={styles.saveHintRow}>
+          <Ionicons name="information-circle-outline" size={14} color={colors.warning} />
+          <Text style={styles.saveHint}>
+            {!boxOk
+              ? "Choose a box to save into"
+              : needCode && !itemOk
+                ? "Scan or enter the item code to save"
+                : printStatus === "printing"
+                  ? "Printing the label…"
+                  : printStatus === "failed"
+                    ? "Print failed — retry, or write the code by hand"
+                    : printStatus === "noprinter"
+                      ? "Connect a printer to print the label, or write the code by hand"
+                      : "Preparing the label…"}
+          </Text>
+        </View>
       ) : null}
       <View style={styles.actionBar}>
         <PrimaryButton
@@ -1247,8 +1263,8 @@ const styles = StyleSheet.create({
   },
   bigPhotoText: { ...t.bodyStrong, color: colors.primary },
   photoStrip: { paddingTop: space.lg, gap: space.sm },
-  photoThumbWrap: { width: 120, height: 150 },
-  photoThumb: { width: 120, height: 150, borderRadius: radius.md, backgroundColor: colors.muted },
+  photoThumbWrap: { width: 150, height: 200 },
+  photoThumb: { width: 150, height: 200, borderRadius: radius.md, backgroundColor: colors.muted },
   photoDelete: {
     position: "absolute",
     top: 6,
@@ -1261,8 +1277,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   addPhotoTile: {
-    width: 120,
-    height: 150,
+    width: 150,
+    height: 200,
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: colors.border,
@@ -1327,14 +1343,16 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
   },
-  saveHint: {
-    ...t.caption,
-    color: colors.mutedFg,
-    textAlign: "center",
+  saveHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
     paddingHorizontal: space.lg,
     paddingTop: space.sm,
     backgroundColor: colors.surface,
   },
+  saveHint: { ...t.caption, color: colors.mutedFg, textAlign: "center", flexShrink: 1 },
   saveOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(15,23,42,0.6)",
