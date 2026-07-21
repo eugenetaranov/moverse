@@ -29,3 +29,12 @@ export async function reserveCode(): Promise<string> {
   counter = (counter ?? 0) + 1;
   return format(counter);
 }
+
+// Give a reserved code back if it was never saved (the item was discarded), so
+// the next reservation reuses that number instead of leaving a gap. Only the
+// most-recently minted code can be released — releasing an older one would risk
+// reissuing a number a later item already took.
+export function releaseCode(code: string): void {
+  const n = parse(code);
+  if (n > 0 && counter === n) counter = n - 1;
+}
