@@ -17,12 +17,12 @@
 - [x] 3.2 Sheet header: preselected box chip (one-tap change via `SetBox`) + Done/close control
 - [x] 3.3 Camera-forward photo step (reuse `Capture.tsx`), large photo tile. (Single primary photo — pre-save multi-photo deferred; extra photos already supported post-save in item-detail.)
 - [x] 3.4 Optional description field with inline "Auto-describe" (reuse `describe`); never blocks Save
-- [x] 3.5 Full-width "Save item" pinned at the bottom, disabled until ≥1 photo ("Add a photo to save")
+- [x] 3.5 Full-width "Save item" pinned at the bottom; photo and description optional, gated only on a box (+ valid code unless none mode)
 
 ## 4. Mode-aware code step
 
 - [x] 4.1 `assign`: on sheet open, mint code (`reservation.ts`) and fire `printLabel`; render the non-blocking status line
-- [x] 4.2 Status line states: Printing… / Printed / "No printer — will print when connected" [Connect] / "Print failed" [Retry]; none gate Save
+- [x] 4.2 Status line states: Printing… / Printed ✓ / "No printer — connect" [Connect] / "Print failed" [Retry] + "write by hand" link; in assign mode these gate Save (printer problem is a blocker) until printed or hand-written acknowledged
 - [x] 4.3 `scan`: the code line is a code field + live scan step (`Scanner.tsx`) with manual-entry fallback; no printing
 - [x] 4.4 `none`: omit the code line entirely; save with `itemCode` undefined so the server mints the hidden code
 

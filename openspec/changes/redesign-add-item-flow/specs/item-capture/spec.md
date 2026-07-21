@@ -28,22 +28,22 @@ The app SHALL present the capture flow as a single full-height sheet (not a mult
 
 ### Requirement: Print-on-open item label (assign mode)
 
-In `assign` mode the app SHALL mint the item code and print its label as soon as the capture sheet opens, so the label is available before the item is photographed. The print status SHALL be shown as a non-blocking status line and SHALL NOT block saving.
+In `assign` mode the app SHALL mint the item code and print its label as soon as the capture sheet opens, so the label is available before the item is photographed. The print status SHALL be shown on a status line. Because the physical sticker is the purpose of assign mode, a printer problem SHALL be treated as a blocker: the label MUST be printed (or the user MUST acknowledge writing the code by hand) before the item can be saved. The status line SHALL offer a connect action when no printer is available, a retry action on failure, and a "write by hand" acknowledgment so a missing printer is not a dead end.
 
 #### Scenario: Label prints on open
 
 - **WHEN** the capture sheet opens in `assign` mode
 - **THEN** the app mints an `ITM-` code and starts printing its label, showing "Printing…" then "Printed" on the status line
 
-#### Scenario: No printer does not block
+#### Scenario: No printer blocks save until handled
 
-- **WHEN** the sheet opens in `assign` mode and no printer covers item labels
-- **THEN** the status line shows "No printer — will print when connected" with a connect action, the print is deferred, and the user can still complete and save the item
+- **WHEN** the sheet is in `assign` mode and no printer covers item labels
+- **THEN** the status line shows the missing-printer state with a connect action, "Save item" is disabled, and the user can either connect and print or tap "write by hand" to acknowledge and enable saving
 
-#### Scenario: Print failure offers retry
+#### Scenario: Print failure blocks save and offers retry
 
-- **WHEN** the label print fails
-- **THEN** the status line shows "Print failed — Retry" and saving remains available
+- **WHEN** the label print fails in `assign` mode
+- **THEN** the status line shows the failure with a retry action, "Save item" stays disabled until the label prints or the user acknowledges writing the code by hand
 
 ### Requirement: Mode-aware code handling in the sheet
 
@@ -59,16 +59,16 @@ The capture sheet SHALL adapt its code step to the active labeling mode: `assign
 - **WHEN** the sheet opens in `none` mode
 - **THEN** no code line is shown, no code is minted on the device, and the server assigns a hidden code at save
 
-### Requirement: Photo-gated save
+### Requirement: Save gating
 
-The "Save item" action SHALL be disabled until at least one photo has been captured for the item, and its disabled state SHALL indicate that a photo is required.
+The "Save item" action SHALL be enabled once a box is set and, unless in `none` mode, a valid item code is present; in `assign` mode the label MUST additionally be printed or acknowledged as hand-written (see print-on-open). Photo and description SHALL both be optional and SHALL NOT gate saving. When Save is disabled, the sheet SHALL indicate what is still required.
 
-#### Scenario: Save disabled without a photo
+#### Scenario: Save enabled without a photo or description
 
-- **WHEN** no photo has been captured for the current item
-- **THEN** "Save item" is disabled and communicates that a photo is needed
+- **WHEN** a box is set, (unless in none mode) a valid item code is present, and (in assign mode) the label is printed or acknowledged hand-written, but no photo or description has been added
+- **THEN** "Save item" is enabled
 
-#### Scenario: Save enabled after a photo
+#### Scenario: Save disabled without a box
 
-- **WHEN** at least one photo has been captured
-- **THEN** "Save item" becomes enabled (description remaining optional)
+- **WHEN** no box is set for the current item
+- **THEN** "Save item" is disabled and the sheet indicates a box is needed

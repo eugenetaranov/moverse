@@ -98,6 +98,9 @@ export default function Pack() {
   const [flowOpen, setFlowOpen] = useState(false); // is the capture sheet up?
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [describeState, setDescribeState] = useState<DescribeState>("idle");
+  // assign mode only: the user acknowledged writing the code by hand, which
+  // satisfies the "label handled" gate when no printer is available.
+  const [handWrote, setHandWrote] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [count, setCount] = useState(0);
@@ -251,6 +254,7 @@ export default function Pack() {
   async function beginItem() {
     setPrintStatus("idle");
     setDescribeState("idle");
+    setHandWrote(false);
     setDraft((d) => ({ ...EMPTY, boxCode: d.boxCode, newBox: d.newBox }));
     if (mode === "assign") await mintAndPrint();
   }
@@ -266,6 +270,7 @@ export default function Pack() {
     setDraft((d) => ({ ...EMPTY, boxCode: d.boxCode, newBox: d.newBox }));
     setPrintStatus("idle");
     setDescribeState("idle");
+    setHandWrote(false);
   }
 
   // Backing out: confirm only if the user entered real input for this item.
@@ -447,6 +452,7 @@ export default function Pack() {
       void saveCurrentBox(nextBox);
       setPrintStatus("idle");
       setDescribeState("idle");
+      setHandWrote(false);
       setDraft({ ...EMPTY, boxCode: nextBox });
       if (mode === "assign") await mintAndPrint();
     } catch (e) {
@@ -568,9 +574,14 @@ export default function Pack() {
   const itemBad = draft.itemCode.trim() !== "" && classify(draft.itemCode) !== "item";
   const itemOk = draft.itemCode.trim() !== "" && !itemBad;
   const boxOk = draft.boxCode.trim() !== "" || !!draft.newBox;
-  const hasPhoto = draft.photoUri !== "";
   const needCode = mode !== "none";
-  const canSave = !saving && boxOk && hasPhoto && (!needCode || itemOk);
+  // In assign mode the app is meant to produce a physical sticker, so a printer
+  // problem is a blocker: Save waits until the label is printed (or the user
+  // acknowledges writing the code by hand). scan/none modes print nothing.
+  const labelReady = mode !== "assign" || printStatus === "done" || handWrote;
+  // Photo and description are both optional; Save needs a box, a valid code
+  // (unless none mode), and — in assign mode — the label handled.
+  const canSave = !saving && boxOk && (!needCode || itemOk) && labelReady;
   const boxLabel =
     draft.newBox && !draft.boxCode.trim()
       ? "New box — code on save"
@@ -689,19 +700,23 @@ export default function Pack() {
       ? "Printing…"
       : printStatus === "done"
         ? "Printed ✓"
-        : printStatus === "noprinter"
-          ? "No printer — will print when connected"
-          : printStatus === "failed"
-            ? "Print failed"
-            : busy
-              ? "Preparing…"
-              : "";
+        : handWrote
+          ? "Write the code on the item by hand"
+          : printStatus === "noprinter"
+            ? "No printer — connect to print the label"
+            : printStatus === "failed"
+              ? "Print failed — connect or retry"
+              : busy
+                ? "Preparing…"
+                : "";
   const printStatusColor =
     printStatus === "done"
       ? colors.accent
-      : printStatus === "failed" || printStatus === "noprinter"
-        ? colors.warning
-        : colors.mutedFg;
+      : handWrote
+        ? colors.mutedFg
+        : printStatus === "failed" || printStatus === "noprinter"
+          ? colors.warning
+          : colors.mutedFg;
 
   return (
     <View style={styles.screen}>
@@ -741,12 +756,12 @@ export default function Pack() {
               <View style={{ flex: 1 }} />
               {printStatus === "printing" ? (
                 <ActivityIndicator size="small" color={colors.primary} />
-              ) : printStatus === "noprinter" ? (
+              ) : printStatus === "noprinter" && !handWrote ? (
                 <TouchableOpacity style={styles.inlineBtn} onPress={() => void connectPrinter()} disabled={busy}>
                   <Ionicons name="bluetooth" size={15} color={colors.primary} />
                   <Text style={styles.inlineBtnText}>Connect</Text>
                 </TouchableOpacity>
-              ) : printStatus === "failed" ? (
+              ) : printStatus === "failed" && !handWrote ? (
                 <TouchableOpacity style={styles.inlineBtn} onPress={() => void printLabel(draft.itemCode)}>
                   <Ionicons name="refresh" size={15} color={colors.primary} />
                   <Text style={styles.inlineBtnText}>Retry</Text>
@@ -758,12 +773,17 @@ export default function Pack() {
                   disabled={!draft.itemCode}
                 >
                   <Ionicons name="print-outline" size={16} color={colors.primary} />
-                  <Text style={styles.inlineBtnText}>Reprint</Text>
+                  <Text style={styles.inlineBtnText}>{printStatus === "done" ? "Reprint" : "Print"}</Text>
                 </TouchableOpacity>
               )}
             </View>
             {printStatusText ? (
               <Text style={[styles.codeStatus, { color: printStatusColor }]}>{printStatusText}</Text>
+            ) : null}
+            {(printStatus === "noprinter" || printStatus === "failed") && !handWrote ? (
+              <TouchableOpacity onPress={() => setHandWrote(true)} hitSlop={8} style={styles.handLink}>
+                <Text style={styles.handLinkText}>No printer? Write the code by hand to save</Text>
+              </TouchableOpacity>
             ) : null}
           </View>
         ) : mode === "scan" ? (
@@ -843,12 +863,12 @@ export default function Pack() {
 
       {!canSave && !saving ? (
         <Text style={styles.saveHint}>
-          {!hasPhoto
-            ? "Add a photo to save"
-            : !boxOk
-              ? "Choose a box to save"
-              : needCode && !itemOk
-                ? "Add the item code to save"
+          {!boxOk
+            ? "Choose a box to save"
+            : needCode && !itemOk
+              ? "Add the item code to save"
+              : !labelReady
+                ? "Print the label (or write the code by hand) to save"
                 : ""}
         </Text>
       ) : null}
@@ -1150,6 +1170,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.muted,
   },
   inlineBtnText: { ...t.caption, color: colors.primary, fontWeight: "700" },
+  handLink: { marginTop: space.sm },
+  handLinkText: { ...t.caption, color: colors.primary, fontWeight: "700", textDecorationLine: "underline" },
   bigPhotoTile: {
     width: "100%",
     height: 200,
