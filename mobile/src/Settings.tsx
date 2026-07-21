@@ -375,6 +375,12 @@ export default function Settings() {
                 <Ionicons name="print" size={18} color={colors.accent} />
                 <Text style={styles.state}>{mp.model.label}</Text>
                 {!mp.model.verified ? <Text style={styles.unverified}>untested</Text> : null}
+                {mp.testPassed ? (
+                  <View style={styles.testedTag}>
+                    <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                    <Text style={styles.testedTagText}>Tested</Text>
+                  </View>
+                ) : null}
               </View>
               <Text style={styles.printerName}>{mp.name}</Text>
 
@@ -453,8 +459,9 @@ export default function Settings() {
                   <Button title="Cancel print" icon="close" tone="danger" onPress={() => cancelPrintOn(mp)} style={styles.flexBtn} />
                 ) : (
                   <Button
-                    title="Print test"
+                    title={mp.testPassed ? "Print test again" : "Print test"}
                     icon="print-outline"
+                    variant={mp.testPassed ? "muted" : "solid"}
                     onPress={() => printTestOn(mp)}
                     disabled={busy || printing}
                     style={styles.flexBtn}
@@ -744,6 +751,8 @@ const styles = StyleSheet.create({
   sizeHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: space.xs },
   savedTag: { flexDirection: "row", alignItems: "center", gap: 3 },
   savedTagText: { ...t.caption, color: colors.accent, fontWeight: "600" },
+  testedTag: { flexDirection: "row", alignItems: "center", gap: 3, marginLeft: "auto" },
+  testedTagText: { ...t.caption, color: colors.accent, fontWeight: "600" },
   headHint: { ...t.caption, color: colors.mutedFg, marginLeft: space.xs },
   disabledBlock: { opacity: opacity.disabled },
   pickerRow: {
