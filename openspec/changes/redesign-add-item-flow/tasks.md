@@ -29,7 +29,7 @@
 ## 5. Save, loop, and exit
 
 - [x] 5.1 On Save, call `api.save` with box/code/description/photo; on success show the success flash
-- [x] 5.2 After success, reset to a fresh item in the same box and, in `assign` mode, start the next label print
+- [x] 5.2 After success, return to the idle screen keeping the same box as target; do NOT mint/print the next label (that happens only on a deliberate "New item" tap)
 - [x] 5.3 Save-failure path keeps photo/description/box/code and allows retry
 - [x] 5.4 Done/close exits to idle; discard confirmation when backing out after real input (photo taken or description typed); silent close when only an auto-printed label exists
 

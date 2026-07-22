@@ -2,12 +2,17 @@
 
 ### Requirement: Guided item capture workflow
 
-The app SHALL present the capture flow as a single full-height sheet (not a multi-step wizard) opened from the idle "New item" entry point, with the steps in this order: (1) the preselected target box shown as a one-tap-changeable chip, (2) mode-aware item-code handling, (3) photo capture, (4) an optional description, (5) a "Save item" action pinned at the bottom. On successful save the app SHALL confirm success and loop straight back to a fresh item targeted at the same box, with the next label already being prepared. The user SHALL be able to exit the flow to the idle screen via a Done/close control.
+The app SHALL present the capture flow as a single full-height sheet (not a multi-step wizard) opened from the idle "New item" entry point, with the steps in this order: (1) the preselected target box shown as a one-tap-changeable chip, (2) mode-aware item-code handling, (3) photo capture, (4) an optional description, (5) a "Save item" action pinned at the bottom. On successful save the app SHALL confirm success and return to the idle screen, keeping the same box as the current target; it SHALL NOT mint or print the next item's label as part of saving. The user SHALL be able to exit the flow to the idle screen via a Done/close control.
 
 #### Scenario: Complete capture end to end
 
 - **WHEN** the user opens the sheet, the box is already selected, a code is handled for the mode, the user takes a photo, optionally edits the description, and taps "Save item"
-- **THEN** the item is persisted with its photo, description, and box link, a success confirmation is shown, and the sheet resets to a new item in the same box
+- **THEN** the item is persisted with its photo, description, and box link, a success confirmation is shown, and the app returns to the idle screen with the same box still selected
+
+#### Scenario: Saving does not print the next label
+
+- **WHEN** an assign-mode item is saved
+- **THEN** no new code is minted and no label is printed as part of the save; the next label is only reserved and printed when the user taps "New item" again
 
 #### Scenario: Save failure is recoverable
 
