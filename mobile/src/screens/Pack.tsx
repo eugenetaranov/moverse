@@ -75,7 +75,7 @@ interface RecentItem {
 }
 
 type Screen = "home" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeBox";
-type PrintStatus = "idle" | "printing" | "done" | "failed" | "noprinter";
+type PrintStatus = "idle" | "connecting" | "printing" | "done" | "failed" | "noprinter";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
 // Request the Bluetooth permissions needed to scan/connect a printer.
@@ -306,14 +306,17 @@ export default function Pack() {
 
   async function connectPrinter() {
     setBusy(true);
+    setPrintStatus("connecting"); // immediate feedback while BT/permissions + connect run
     try {
       if (!(await requestBlePerms())) {
+        setPrintStatus("noprinter");
         Alert.alert("Bluetooth needed", "Grant Bluetooth permission to connect the printer.");
         return;
       }
       await printers.connectFirstAvailable();
-      await printLabel();
+      await printLabel(); // sets printing → done/failed
     } catch (e) {
+      setPrintStatus("noprinter");
       Alert.alert("Couldn't connect", String((e as Error)?.message ?? e));
     } finally {
       setBusy(false);
@@ -733,19 +736,21 @@ export default function Pack() {
 
   // ---- capture sheet ----
   const printStatusText =
-    printStatus === "printing"
-      ? "Printing…"
-      : printStatus === "done"
-        ? "Printed ✓"
-        : handWrote
-          ? "Write the code on the item by hand"
-          : printStatus === "noprinter"
-            ? "No printer — connect to print the label"
-            : printStatus === "failed"
-              ? "Print failed — connect or retry"
-              : busy
-                ? "Preparing…"
-                : "";
+    printStatus === "connecting"
+      ? "Connecting to the printer…"
+      : printStatus === "printing"
+        ? "Printing…"
+        : printStatus === "done"
+          ? "Printed ✓"
+          : handWrote
+            ? "Write the code on the item by hand"
+            : printStatus === "noprinter"
+              ? "No printer — connect to print the label"
+              : printStatus === "failed"
+                ? "Print failed — connect or retry"
+                : busy
+                  ? "Preparing…"
+                  : "";
   const printStatusColor =
     printStatus === "done"
       ? colors.accent
@@ -792,7 +797,7 @@ export default function Pack() {
                 {draft.itemCode || "…"}
               </Text>
               <View style={{ flex: 1 }} />
-              {printStatus === "printing" ? (
+              {printStatus === "printing" || printStatus === "connecting" ? (
                 <ActivityIndicator size="small" color={colors.primary} />
               ) : printStatus === "noprinter" && !handWrote ? (
                 <TouchableOpacity style={styles.inlineBtn} onPress={() => void connectPrinter()} disabled={busy}>
@@ -937,13 +942,15 @@ export default function Pack() {
               ? "Choose a box to save into"
               : needCode && !itemOk
                 ? "Scan or enter the item code to save"
-                : printStatus === "printing"
-                  ? "Printing the label…"
-                  : printStatus === "failed"
-                    ? "Print failed — retry, or write the code by hand"
-                    : printStatus === "noprinter"
-                      ? "Connect a printer to print the label, or write the code by hand"
-                      : "Preparing the label…"}
+                : printStatus === "connecting"
+                  ? "Connecting to the printer…"
+                  : printStatus === "printing"
+                    ? "Printing the label…"
+                    : printStatus === "failed"
+                      ? "Print failed — retry, or write the code by hand"
+                      : printStatus === "noprinter"
+                        ? "Connect a printer to print the label, or write the code by hand"
+                        : "Preparing the label…"}
           </Text>
         </View>
       ) : null}
