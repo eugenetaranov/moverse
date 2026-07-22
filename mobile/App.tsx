@@ -57,6 +57,7 @@ function PackStack() {
         })}
       />
       <PackNav.Screen name="Settings" component={Settings} options={{ title: "Settings" }} />
+      <PackNav.Screen name="ItemDetail" component={ItemDetail} options={{ title: "Item" }} />
     </PackNav.Navigator>
   );
 }
