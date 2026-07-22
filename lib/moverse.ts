@@ -229,7 +229,9 @@ async function nextBoxCode(c: Cfg): Promise<string> {
     offset = data.offset;
   } while (offset);
 
-  return `BOX-${String(max + 1).padStart(4, "0")}`;
+  // 2-digit zero padding: BOX-01 … BOX-99, then BOX-100+ naturally. (max is the
+  // highest numeric code regardless of its stored padding.)
+  return `BOX-${String(max + 1).padStart(2, "0")}`;
 }
 
 export async function handleNextBoxCode(c: Cfg): Promise<Response> {

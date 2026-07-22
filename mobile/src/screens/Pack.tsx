@@ -35,7 +35,7 @@ import {
 import { DEFAULT_TUNING, PrintTuning, loadTuning } from "../labelSettings";
 import { printers } from "../niimbot/connection";
 import { renderLabel } from "../niimbot/label";
-import { printBoxLabels, NoBoxPrinter } from "../boxLabelPrint";
+import { printBoxLabels, NoBoxPrinter, MAX_COPIES } from "../boxLabelPrint";
 import { printItemLabels, NoItemPrinter } from "../itemLabelPrint";
 import { reserveCode, releaseCode, seedReservation } from "../reservation";
 import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
@@ -66,7 +66,7 @@ interface Draft {
 }
 const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photos: [] };
 
-type Screen = "home" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeBox";
+type Screen = "home" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeBox" | "boxLabel";
 type PrintStatus = "idle" | "connecting" | "printing" | "done" | "failed" | "noprinter";
 type DescribeState = "idle" | "loading" | "off" | "done";
 
@@ -90,6 +90,9 @@ export default function Pack() {
   const [mode, setModeState] = useState<LabelingMode>(DEFAULT_MODE);
   const [tuning, setTuning] = useState<PrintTuning>(DEFAULT_TUNING);
   const [printStatus, setPrintStatus] = useState<PrintStatus>("idle");
+  // Box-label screen: how many copies to print, and its own print status.
+  const [boxCopies, setBoxCopies] = useState(1);
+  const [boxPrintStatus, setBoxPrintStatus] = useState<PrintStatus>("idle");
 
   const [screen, setScreen] = useState<Screen>("home");
   const [flowOpen, setFlowOpen] = useState(false); // is the capture sheet up?
@@ -227,14 +230,61 @@ export default function Pack() {
       const code = await reserveBoxCode();
       edit({ boxCode: code, newBox: false });
       void saveCurrentBox(code);
-      if (printers.printerForKind("box")) {
-        setScreen("home");
-        void printBoxLabel(code);
-      } else {
-        setScreen("writeBox");
-      }
+      // Open the box-label screen (code + copies) and auto-print the first label,
+      // so extra copies are one tap away without opening the box in Browse.
+      setBoxCopies(1);
+      setBoxPrintStatus("idle");
+      setScreen("boxLabel");
+      void printBoxCopies(code, 1);
     } catch (e) {
       Alert.alert("Couldn't get a box code", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Print `copies` box labels inline (no alerts) — status shown on the boxLabel
+  // screen. Used for the auto-print and the on-demand "print more".
+  async function printBoxCopies(code: string, copies: number) {
+    const trimmed = code.trim();
+    if (!trimmed) return;
+    if (!printers.printerForKind("box")) {
+      setBoxPrintStatus("noprinter");
+      buzzErr();
+      return;
+    }
+    setBoxPrintStatus("printing");
+    try {
+      const { printed } = await printBoxLabels(trimmed, copies);
+      if (printed > 0) {
+        buzzOk();
+        setBoxPrintStatus("done");
+      } else setBoxPrintStatus("failed");
+    } catch (e) {
+      if (e instanceof NoBoxPrinter) {
+        setBoxPrintStatus("noprinter");
+        buzzErr();
+        return;
+      }
+      buzzErr();
+      setBoxPrintStatus("failed");
+    }
+  }
+
+  async function connectAndPrintBoxCopies(code: string, copies: number) {
+    setBusy(true);
+    setBoxPrintStatus("connecting");
+    try {
+      if (Platform.OS === "android" && !(await requestBlePerms())) {
+        setBoxPrintStatus("noprinter");
+        Alert.alert("Bluetooth needed", "Grant Bluetooth permission to connect the printer.");
+        return;
+      }
+      await printers.connectFirstAvailable();
+      await printBoxCopies(code, copies);
+    } catch (e) {
+      setBoxPrintStatus("noprinter");
+      Alert.alert("Couldn't connect", String((e as Error)?.message ?? e));
     } finally {
       setBusy(false);
     }
@@ -610,6 +660,81 @@ export default function Pack() {
         />
       </Center>
     );
+  if (screen === "boxLabel") {
+    const boxStatus =
+      boxPrintStatus === "connecting"
+        ? { text: "Connecting…", color: colors.mutedFg }
+        : boxPrintStatus === "printing"
+          ? { text: "Printing…", color: colors.mutedFg }
+          : boxPrintStatus === "done"
+            ? { text: "Printed ✓", color: colors.accent }
+            : boxPrintStatus === "noprinter"
+              ? { text: "No printer — connect to print", color: colors.warning }
+              : boxPrintStatus === "failed"
+                ? { text: "Print failed", color: colors.warning }
+                : { text: "", color: colors.mutedFg };
+    const boxBusy = busy || boxPrintStatus === "printing" || boxPrintStatus === "connecting";
+    return (
+      <Center>
+        <Ionicons name="cube" size={40} color={colors.primary} />
+        <Text style={styles.h2}>New box</Text>
+        <Text style={styles.bigCode}>{draft.boxCode}</Text>
+        {boxStatus.text ? (
+          <Text style={[styles.printStatus, { color: boxStatus.color }]}>{boxStatus.text}</Text>
+        ) : null}
+        <View style={{ height: space.lg }} />
+        <View style={styles.stepperRow}>
+          <Text style={styles.stepperLabel}>Copies</Text>
+          <View style={styles.stepper}>
+            <TouchableOpacity
+              onPress={() => setBoxCopies((c) => Math.max(1, c - 1))}
+              disabled={boxCopies <= 1}
+              style={styles.stepBtn}
+              accessibilityLabel="Fewer copies"
+            >
+              <Ionicons name="remove" size={22} color={boxCopies <= 1 ? colors.mutedFg : colors.fg} />
+            </TouchableOpacity>
+            <Text style={styles.stepVal}>{boxCopies}</Text>
+            <TouchableOpacity
+              onPress={() => setBoxCopies((c) => Math.min(MAX_COPIES, c + 1))}
+              disabled={boxCopies >= MAX_COPIES}
+              style={styles.stepBtn}
+              accessibilityLabel="More copies"
+            >
+              <Ionicons name="add" size={22} color={boxCopies >= MAX_COPIES ? colors.mutedFg : colors.fg} />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={{ height: space.md }} />
+        {boxPrintStatus === "noprinter" ? (
+          <PrimaryButton
+            title={boxBusy ? "Connecting…" : boxCopies > 1 ? `Connect & print ${boxCopies}` : "Connect & print"}
+            icon="bluetooth"
+            onPress={() => void connectAndPrintBoxCopies(draft.boxCode, boxCopies)}
+            disabled={boxBusy}
+            style={styles.stretchBtn}
+          />
+        ) : (
+          <PrimaryButton
+            title={
+              boxPrintStatus === "printing"
+                ? "Printing…"
+                : boxCopies > 1
+                  ? `Print ${boxCopies} labels`
+                  : "Print another label"
+            }
+            icon="print-outline"
+            accent
+            onPress={() => void printBoxCopies(draft.boxCode, boxCopies)}
+            disabled={boxBusy}
+            style={styles.stretchBtn}
+          />
+        )}
+        <View style={{ height: space.sm }} />
+        <SecondaryButton title="Done" onPress={() => setScreen("home")} style={styles.stretchBtn} />
+      </Center>
+    );
+  }
 
   // ---- derived ----
   const itemBad = draft.itemCode.trim() !== "" && classify(draft.itemCode) !== "item";
@@ -1318,6 +1443,25 @@ const styles = StyleSheet.create({
   aiHint: { ...t.caption, color: colors.mutedFg, marginTop: space.xs },
   bodyCenter: { ...t.body, color: colors.mutedFg, textAlign: "center" },
   stretchBtn: { alignSelf: "stretch" },
+  printStatus: { ...t.bodyStrong, marginTop: space.md, textAlign: "center" },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    alignSelf: "stretch",
+  },
+  stepperLabel: { ...t.bodyStrong, color: colors.fg },
+  stepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    height: 52,
+  },
+  stepBtn: { width: HIT, height: 52, alignItems: "center", justifyContent: "center" },
+  stepVal: { ...t.bodyStrong, color: colors.fg, minWidth: 24, textAlign: "center" },
   setBoxScreen: { flex: 1, backgroundColor: colors.bg },
   setBoxContent: { padding: space.xl, paddingTop: 56, paddingBottom: space.xxl },
   dropdown: {
