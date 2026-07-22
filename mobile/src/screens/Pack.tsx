@@ -39,7 +39,7 @@ import { printBoxLabels, NoBoxPrinter } from "../boxLabelPrint";
 import { printItemLabels, NoItemPrinter } from "../itemLabelPrint";
 import { reserveCode, releaseCode, seedReservation } from "../reservation";
 import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
-import { Box, addItemPhoto, loadInventory } from "../inventory";
+import { Box, Item, addItemPhoto, loadInventory } from "../inventory";
 import { loadCurrentBox, saveCurrentBox } from "../currentBox";
 import { colors, radius, space, type as t, HIT } from "../theme";
 import {
@@ -65,14 +65,6 @@ interface Draft {
   photos: Photo[];
 }
 const EMPTY: Draft = { itemCode: "", boxCode: "", description: "", photos: [] };
-
-// A just-saved item kept for the session so its label can be reprinted from the
-// idle screen (e.g. after a jam) without hunting for it in Browse.
-interface RecentItem {
-  itemCode: string;
-  description: string;
-  photoUri: string;
-}
 
 type Screen = "home" | "photo" | "scanItem" | "scanBox" | "setBox" | "writeBox";
 type PrintStatus = "idle" | "connecting" | "printing" | "done" | "failed" | "noprinter";
@@ -109,7 +101,7 @@ export default function Pack() {
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState(false);
   const [count, setCount] = useState(0);
-  const [recent, setRecent] = useState<RecentItem[]>([]);
+  const [recent, setRecent] = useState<Item[]>([]);
   const [idleBoxes, setIdleBoxes] = useState<Box[]>([]);
   const [, force] = useState(0);
   const [flash, setFlash] = useState<{ kind: "success" | "error"; msg: string } | null>(null);
@@ -478,9 +470,19 @@ export default function Pack() {
       }
       if (res.action !== "exists") {
         setCount((c) => c + 1);
-        setRecent((r) =>
-          [{ itemCode: shown, description: draft.description.trim(), photoUri: photos[0]?.uri ?? "" }, ...r].slice(0, 8),
-        );
+        // Build a full Item from what we just saved so tapping it in the recent
+        // list opens ItemDetail (edit / reprint / delete) with real data.
+        const savedItem: Item = {
+          itemId: res.itemId,
+          itemCode: shown,
+          description: draft.description.trim(),
+          photoUrl: photos[0]?.uri ?? "",
+          photoThumbUrl: photos[0]?.uri ?? "",
+          photoUrls: photos.map((p) => p.uri),
+          boxCodes: shownBox ? [shownBox] : [],
+          destination: "",
+        };
+        setRecent((r) => [savedItem, ...r].slice(0, 8));
       }
       // Hold the (possibly newly-minted) box as the current box and return to
       // the idle screen. We do NOT mint/print the next label here — the next
@@ -653,14 +655,21 @@ export default function Pack() {
             <View style={styles.emptyRecent}>
               <Ionicons name="albums-outline" size={30} color={colors.mutedFg} />
               <Text style={styles.emptyRecentText}>
-                Items you pack this session appear here — tap the printer to reprint a label.
+                Items you pack this session appear here — tap one to open it, or the printer to reprint.
               </Text>
             </View>
           ) : (
             recent.map((it, i) => (
-              <View key={`${it.itemCode}-${i}`} style={styles.recentRow}>
-                {it.photoUri ? (
-                  <Image source={{ uri: it.photoUri }} style={styles.recentThumb} />
+              <TouchableOpacity
+                key={`${it.itemId || it.itemCode}-${i}`}
+                style={styles.recentRow}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("ItemDetail", { item: it })}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${it.itemCode || "item"}`}
+              >
+                {it.photoUrl ? (
+                  <Image source={{ uri: it.photoUrl }} style={styles.recentThumb} />
                 ) : (
                   <View style={[styles.recentThumb, styles.recentThumbEmpty]}>
                     <Ionicons name="image-outline" size={18} color={colors.mutedFg} />
@@ -686,7 +695,8 @@ export default function Pack() {
                     <Ionicons name="print-outline" size={20} color={colors.primary} />
                   </TouchableOpacity>
                 ) : null}
-              </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.mutedFg} style={{ marginLeft: 4 }} />
+              </TouchableOpacity>
             ))
           )}
         </ScrollView>

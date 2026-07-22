@@ -9,6 +9,7 @@ export type RootTabParamList = {
 export type PackStackParamList = {
   PackHome: undefined;
   Settings: undefined;
+  ItemDetail: { item: Item };
 };
 
 export type BrowseStackParamList = {
