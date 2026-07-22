@@ -13,7 +13,8 @@ function parse(code: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-const format = (n: number) => `BOX-${String(n).padStart(4, "0")}`;
+// 2-digit zero padding: BOX-01 … BOX-99, then BOX-100+ naturally.
+const format = (n: number) => `BOX-${String(n).padStart(2, "0")}`;
 
 // Seed from the backend's current max (nextBoxCode returns max+1). Best-effort;
 // falls back to 0 so the first reservation still yields a code.
