@@ -131,7 +131,6 @@ export default function Pack() {
     });
     void seedReservation();
     void seedBoxReservation();
-    void printers.reconnectRemembered();
     return printers.subscribe(() => force((n) => n + 1));
   }, []);
 

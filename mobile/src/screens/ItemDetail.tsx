@@ -43,7 +43,6 @@ export default function ItemDetail({ route, navigation }: Props) {
   const cancelRef = useRef(false);
 
   useEffect(() => {
-    void printers.reconnectRemembered();
     return printers.subscribe(() => setItem((i) => ({ ...i })));
   }, []);
 

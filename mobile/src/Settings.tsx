@@ -112,7 +112,6 @@ export default function Settings() {
     });
     loadBoxQr().then(setBoxQr);
     printers.log = log;
-    void printers.reconnectRemembered();
     return printers.subscribe(() => force((n) => n + 1));
   }, []);
 
@@ -175,24 +174,12 @@ export default function Settings() {
         );
         return;
       }
-      // 1) Reconnect a remembered printer that dropped, before scanning. A BLE
-      //    scan often can't see a bonded/idle printer, so this is what actually
-      //    brings the previous printer back.
-      if (printers.hasRemembered()) {
-        log("reconnecting your printer…");
-        const reconnected = await printers.reconnectRemembered();
-        if (reconnected > 0) {
-          log(`reconnected ${reconnected} printer${reconnected === 1 ? "" : "s"}`);
-          return;
-        }
-      }
-      // 2) Nothing remembered came back → scan for a new printer.
       log("scanning for a printer…");
       const candidates = await printers.scanForNew();
       if (candidates.length === 0) {
         Alert.alert(
           "No printer found",
-          "Tried to reconnect your saved printer and scanned for new ones. Check that the printer is powered on, in range, and not connected to another phone or the NIIMBOT app, then try again.",
+          "Check that the printer is powered on, in range, and not connected to another phone or the NIIMBOT app, then try again.",
           [
             { text: "Try again", onPress: () => void addPrinter() },
             { text: "Cancel", style: "cancel" },
