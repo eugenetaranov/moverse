@@ -90,26 +90,39 @@ export function ItemCard({ item, onPress }: { item: Item; onPress: () => void })
 }
 
 // Compact table-style row for the Items list: standard thumbnail + code +
-// description + box chips. Long-press to delete.
+// description + box chips. Long-press to start selecting; in selection mode a
+// leading checkbox replaces the chevron and tapping toggles the row.
 export function ItemRow({
   item,
   onPress,
   onLongPress,
+  selectionMode = false,
+  selected = false,
 }: {
   item: Item;
   onPress: () => void;
   onLongPress?: () => void;
+  selectionMode?: boolean;
+  selected?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={styles.row}
+      style={[styles.row, selected && styles.rowSelected]}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={350}
       activeOpacity={0.85}
-      accessibilityRole="button"
+      accessibilityRole={selectionMode ? "checkbox" : "button"}
+      accessibilityState={selectionMode ? { checked: selected } : undefined}
       accessibilityLabel={`${item.itemCode || "Item"}${item.description ? ", " + item.description : ""}`}
     >
+      {selectionMode ? (
+        <Ionicons
+          name={selected ? "checkmark-circle" : "ellipse-outline"}
+          size={24}
+          color={selected ? colors.accent : colors.mutedFg}
+        />
+      ) : null}
       {item.photoThumbUrl ? (
         <Image source={{ uri: item.photoThumbUrl }} style={styles.rowThumb} />
       ) : (
@@ -134,7 +147,7 @@ export function ItemRow({
           )}
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.mutedFg} />
+      {selectionMode ? null : <Ionicons name="chevron-forward" size={18} color={colors.mutedFg} />}
     </TouchableOpacity>
   );
 }
@@ -198,6 +211,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: space.sm,
   },
+  rowSelected: { borderColor: colors.accent, backgroundColor: colors.muted },
   rowThumb: { width: 56, height: 56, borderRadius: radius.sm, backgroundColor: colors.muted },
   rowBody: { flex: 1 },
   deleteAction: {

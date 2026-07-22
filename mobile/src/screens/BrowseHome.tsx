@@ -8,6 +8,7 @@ import { Box, Item, clearInventoryCache, deleteBox, deleteItem, loadInventory } 
 import { Segmented, LoadingState, EmptyState, ErrorState } from "../ui";
 import { colors, radius, space, HIT } from "../theme";
 import { BoxCard, ItemRow, SwipeToDelete } from "./cards";
+import { MoveToBoxSheet, SelectionBar, deleteItems, moveItemsToBox, useItemSelection } from "./selection";
 
 type Props = NativeStackScreenProps<BrowseStackParamList, "BrowseHome">;
 type Seg = "boxes" | "items";
@@ -21,6 +22,9 @@ export default function BrowseHome({ navigation }: Props) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const sel = useItemSelection();
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(
     async (force: boolean) => {
@@ -106,6 +110,52 @@ export default function BrowseHome({ navigation }: Props) {
     );
   }
 
+  async function moveSelectedTo(boxCode: string) {
+    const ids = [...sel.selected];
+    const idSet = new Set(ids);
+    setMoveOpen(false);
+    setBusy(true);
+    try {
+      await moveItemsToBox(ids, boxCode);
+      setItems((prev) =>
+        prev.map((it) => (idSet.has(it.itemId) ? { ...it, boxCodes: [boxCode] } : it)),
+      );
+      sel.clear();
+    } catch (e) {
+      Alert.alert("Move failed", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function confirmDeleteSelected() {
+    const ids = [...sel.selected];
+    const idSet = new Set(ids);
+    Alert.alert(
+      "Delete items?",
+      `Delete ${ids.length} item${ids.length === 1 ? "" : "s"}? This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await deleteItems(ids);
+              setItems((prev) => prev.filter((x) => !idSet.has(x.itemId)));
+              sel.clear();
+            } catch (e) {
+              Alert.alert("Delete failed", String((e as Error)?.message ?? e));
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   const refreshCtl = (
     <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.primary} />
   );
@@ -119,7 +169,10 @@ export default function BrowseHome({ navigation }: Props) {
             { value: "items", label: "Items" },
           ]}
           value={seg}
-          onChange={setSeg}
+          onChange={(s) => {
+            sel.clear();
+            setSeg(s);
+          }}
         />
       </View>
 
@@ -151,18 +204,29 @@ export default function BrowseHome({ navigation }: Props) {
           key="items"
           data={shownItems}
           keyExtractor={(it) => it.itemId}
-          renderItem={({ item }) => (
-            <SwipeToDelete onDelete={() => confirmDeleteItem(item)}>
+          renderItem={({ item }) =>
+            sel.mode ? (
               <ItemRow
                 item={item}
-                onPress={() => navigation.navigate("ItemDetail", { item })}
-                onLongPress={() => confirmDeleteItem(item)}
+                selectionMode
+                selected={sel.selected.has(item.itemId)}
+                onPress={() => sel.toggle(item.itemId)}
+                onLongPress={() => sel.toggle(item.itemId)}
               />
-            </SwipeToDelete>
-          )}
+            ) : (
+              <SwipeToDelete onDelete={() => confirmDeleteItem(item)}>
+                <ItemRow
+                  item={item}
+                  onPress={() => navigation.navigate("ItemDetail", { item })}
+                  onLongPress={() => sel.enter(item.itemId)}
+                />
+              </SwipeToDelete>
+            )
+          }
           contentContainerStyle={styles.list}
           refreshControl={refreshCtl}
           keyboardShouldPersistTaps="handled"
+          extraData={sel.selected}
           ListEmptyComponent={
             <EmptyState
               icon={debounced ? "search" : "cube-outline"}
@@ -196,7 +260,29 @@ export default function BrowseHome({ navigation }: Props) {
           }
         />
       )}
-      <Text style={styles.hint}>Swipe a row right, or long-press, to delete.</Text>
+      {seg === "items" && sel.mode ? (
+        <SelectionBar
+          count={sel.count}
+          allSelected={sel.count === shownItems.length && shownItems.length > 0}
+          onToggleAll={() => sel.setAll(shownItems.map((it) => it.itemId))}
+          onMove={() => setMoveOpen(true)}
+          onDelete={confirmDeleteSelected}
+          onCancel={sel.clear}
+          busy={busy}
+        />
+      ) : (
+        <Text style={styles.hint}>
+          {seg === "items"
+            ? "Swipe right to delete · long-press to select several."
+            : "Swipe a row right, or long-press, to delete."}
+        </Text>
+      )}
+      <MoveToBoxSheet
+        visible={moveOpen}
+        count={sel.count}
+        onPick={moveSelectedTo}
+        onClose={() => setMoveOpen(false)}
+      />
     </View>
   );
 }

@@ -8,6 +8,7 @@ import { Box, Item, clearInventoryCache, deleteBox, deleteItem, loadInventory, u
 import { PrimaryButton, SecondaryButton, Segmented, FieldLabel, TextField, LoadingState, EmptyState, ErrorState } from "../ui";
 import { colors, radius, space, type as t, HIT } from "../theme";
 import { ItemRow, SwipeToDelete, isSuitcase, isWithMe } from "./cards";
+import { MoveToBoxSheet, SelectionBar, deleteItems, moveItemsToBox, useItemSelection } from "./selection";
 import { MAX_COPIES, NoBoxPrinter, printBoxLabels } from "../boxLabelPrint";
 import { printers } from "../niimbot/connection";
 import { requestBlePerms } from "../blePerms";
@@ -39,6 +40,9 @@ export default function BoxDetail({ route, navigation }: Props) {
   const [printing, setPrinting] = useState(false);
   const [progress, setProgress] = useState("");
   const cancelRef = useRef(false);
+  const sel = useItemSelection();
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => navigation.setOptions({ title: boxCode }), [navigation, boxCode]);
 
@@ -176,6 +180,51 @@ export default function BoxDetail({ route, navigation }: Props) {
     ]);
   }
 
+  // Moving replaces box membership, so moved items leave this box's list.
+  async function moveSelectedTo(toBox: string) {
+    const ids = [...sel.selected];
+    const idSet = new Set(ids);
+    setMoveOpen(false);
+    setBusy(true);
+    try {
+      await moveItemsToBox(ids, toBox);
+      setItems((prev) => prev.filter((x) => !idSet.has(x.itemId)));
+      sel.clear();
+    } catch (e) {
+      Alert.alert("Move failed", String((e as Error)?.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function confirmDeleteSelected() {
+    const ids = [...sel.selected];
+    const idSet = new Set(ids);
+    Alert.alert(
+      "Delete items?",
+      `Delete ${ids.length} item${ids.length === 1 ? "" : "s"}? This can't be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await deleteItems(ids);
+              setItems((prev) => prev.filter((x) => !idSet.has(x.itemId)));
+              sel.clear();
+            } catch (e) {
+              Alert.alert("Delete failed", String((e as Error)?.message ?? e));
+            } finally {
+              setBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   if (status === "loading") return <LoadingState />;
   if (status === "error") return <ErrorState message={error} onRetry={() => load(true)} />;
 
@@ -185,19 +234,31 @@ export default function BoxDetail({ route, navigation }: Props) {
       dest !== (isWithMe(box.destination) ? "With me" : box.destination ? "Shipment" : dest));
 
   return (
+    <View style={styles.container}>
     <FlatList
       style={styles.container}
       data={items}
       keyExtractor={(it) => it.itemId}
-      renderItem={({ item }) => (
-        <SwipeToDelete onDelete={() => confirmDeleteItem(item)}>
+      renderItem={({ item }) =>
+        sel.mode ? (
           <ItemRow
             item={item}
-            onPress={() => navigation.navigate("ItemDetail", { item })}
-            onLongPress={() => confirmDeleteItem(item)}
+            selectionMode
+            selected={sel.selected.has(item.itemId)}
+            onPress={() => sel.toggle(item.itemId)}
+            onLongPress={() => sel.toggle(item.itemId)}
           />
-        </SwipeToDelete>
-      )}
+        ) : (
+          <SwipeToDelete onDelete={() => confirmDeleteItem(item)}>
+            <ItemRow
+              item={item}
+              onPress={() => navigation.navigate("ItemDetail", { item })}
+              onLongPress={() => sel.enter(item.itemId)}
+            />
+          </SwipeToDelete>
+        )
+      }
+      extraData={sel.selected}
       contentContainerStyle={styles.list}
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
@@ -264,6 +325,25 @@ export default function BoxDetail({ route, navigation }: Props) {
       }
       ListEmptyComponent={<EmptyState icon="cube-outline" title="This box is empty" subtitle="Items packed into it will appear here." />}
     />
+    {sel.mode ? (
+      <SelectionBar
+        count={sel.count}
+        allSelected={sel.count === items.length && items.length > 0}
+        onToggleAll={() => sel.setAll(items.map((it) => it.itemId))}
+        onMove={() => setMoveOpen(true)}
+        onDelete={confirmDeleteSelected}
+        onCancel={sel.clear}
+        busy={busy}
+      />
+    ) : null}
+    <MoveToBoxSheet
+      visible={moveOpen}
+      count={sel.count}
+      exclude={[boxCode]}
+      onPick={moveSelectedTo}
+      onClose={() => setMoveOpen(false)}
+    />
+    </View>
   );
 }
 
