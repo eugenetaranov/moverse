@@ -648,7 +648,7 @@ export default function Pack() {
         </TouchableOpacity>
         <Text style={[styles.status, styles.statusIdle]}>{count > 0 ? `${count} packed` : "Ready"}</Text>
 
-        <ScrollView contentContainerStyle={styles.recentBody}>
+        <ScrollView style={styles.flex} contentContainerStyle={styles.recentBody}>
           {recent.length === 0 ? (
             <View style={styles.emptyRecent}>
               <Ionicons name="albums-outline" size={30} color={colors.mutedFg} />
