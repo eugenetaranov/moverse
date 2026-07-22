@@ -14,6 +14,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { useCameraPermissions } from "expo-camera";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -91,6 +92,7 @@ async function requestBlePerms(): Promise<boolean> {
 export default function Pack() {
   const navigation = useNavigation<NativeStackNavigationProp<PackStackParamList, "PackHome">>();
   const [permission, requestPermission] = useCameraPermissions();
+  const insets = useSafeAreaInsets();
 
   const [onboarded, setOnboardedState] = useState<boolean | null>(null);
   const [mode, setModeState] = useState<LabelingMode>(DEFAULT_MODE);
@@ -752,7 +754,7 @@ export default function Pack() {
   const firstPhotoB64 = draft.photos[0]?.base64 ?? "";
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: insets.top + space.sm }]}>
       <View style={styles.sheetHeader}>
         <TouchableOpacity
           style={styles.boxChip}
