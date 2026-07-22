@@ -173,16 +173,10 @@ class PrinterManager {
     return mp;
   }
 
-  // Connect a printer for the single-printer "Connect" button: reconnect a
-  // remembered printer first (by id — works when it isn't advertising), and only
-  // scan for a new one if nothing remembered came back.
+  // Scan and connect the first printer that isn't already connected. Reconnect
+  // by id proved unreliable in the field, so the "Connect" button always scans
+  // ("connect as new") — the printer shows up in a scan and connects fast.
   async connectFirstAvailable(): Promise<ManagedPrinter> {
-    await this.ensureLoaded();
-    if (this.hasRemembered() && !this.connected) {
-      await this.reconnectRemembered();
-      const back = this.list()[0];
-      if (back) return back;
-    }
     const found = await this.scan();
     const next = found.find((c) => !this.printers.has(c.id));
     if (!next) throw new Error("no new printer found");
