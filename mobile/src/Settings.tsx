@@ -77,6 +77,10 @@ export default function Settings() {
   const [boxQr, setBoxQr] = useState<BoxQrContent>(DEFAULT_BOX_QR);
   const [picker, setPicker] = useState<PrinterCandidate[] | null>(null);
   const [connectingName, setConnectingName] = useState<string | null>(null);
+  // True from the moment "Connect" is tapped until scanning/reconnecting takes
+  // over its own indicator — gives immediate feedback during the BT/permission
+  // checks that happen before either starts.
+  const [preparing, setPreparing] = useState(false);
   // Live per-printer size edits (by device id). A printer's draft falls back to
   // its saved size; editing updates the draft, and Save commits it.
   const [sizeDraft, setSizeDraft] = useState<Record<string, LabelSize>>({});
@@ -143,9 +147,12 @@ export default function Settings() {
       log("printers disconnected (not used in this mode)");
     }
   }
-  // Connect an additional printer: check Bluetooth + permissions, scan, then
-  // auto-connect a lone printer or let the user pick among several.
+  // Connect a printer: check Bluetooth + permissions, then try to reconnect a
+  // remembered printer (by id — works even when it isn't advertising) before
+  // scanning for a new one. Auto-connects a lone new printer or lets the user
+  // pick among several.
   async function addPrinter() {
+    setPreparing(true); // immediate feedback while the async checks run
     setBusy(true);
     try {
       if ((await printers.bluetoothState()) === "PoweredOff") {
@@ -168,14 +175,26 @@ export default function Settings() {
         );
         return;
       }
+      // 1) Reconnect a remembered printer that dropped, before scanning. A BLE
+      //    scan often can't see a bonded/idle printer, so this is what actually
+      //    brings the previous printer back.
+      if (printers.hasRemembered()) {
+        log("reconnecting your printer…");
+        const reconnected = await printers.reconnectRemembered();
+        if (reconnected > 0) {
+          log(`reconnected ${reconnected} printer${reconnected === 1 ? "" : "s"}`);
+          return;
+        }
+      }
+      // 2) Nothing remembered came back → scan for a new printer.
       log("scanning for a printer…");
       const candidates = await printers.scanForNew();
       if (candidates.length === 0) {
         Alert.alert(
           "No printer found",
-          "Check that the printer is powered on, in range, and not already connected to another phone or the NIIMBOT app. Then search again.",
+          "Tried to reconnect your saved printer and scanned for new ones. Check that the printer is powered on, in range, and not connected to another phone or the NIIMBOT app, then try again.",
           [
-            { text: "Search again", onPress: () => void addPrinter() },
+            { text: "Try again", onPress: () => void addPrinter() },
             { text: "Cancel", style: "cancel" },
           ],
         );
@@ -195,6 +214,7 @@ export default function Settings() {
       }
     } finally {
       setBusy(false);
+      setPreparing(false);
     }
   }
 
@@ -352,7 +372,7 @@ export default function Settings() {
       <View style={styles.section}>
       {/* Printers */}
       <SectionHeader>Printers</SectionHeader>
-      {printers.list().length === 0 && printers.isReconnecting ? (
+      {printers.list().length === 0 && printers.isReconnecting && !preparing ? (
         <View style={styles.scanRow}>
           <ActivityIndicator color={colors.accent} />
           <Text style={styles.scanText}>Reconnecting your printer…</Text>
@@ -505,6 +525,13 @@ export default function Settings() {
           <TouchableOpacity onPress={() => printers.cancelScan()} hitSlop={8} style={styles.scanCancel}>
             <Ionicons name="close-circle" size={22} color={colors.mutedFg} />
           </TouchableOpacity>
+        </View>
+      ) : preparing ? (
+        <View style={styles.scanRow}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.scanText}>
+            {printers.isReconnecting ? "Reconnecting your printer…" : "Connecting…"}
+          </Text>
         </View>
       ) : (
         <Button

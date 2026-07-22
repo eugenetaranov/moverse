@@ -173,9 +173,16 @@ class PrinterManager {
     return mp;
   }
 
-  // Scan and connect the first printer that isn't already connected. Convenience
-  // for the single-printer "Connect" button.
+  // Connect a printer for the single-printer "Connect" button: reconnect a
+  // remembered printer first (by id — works when it isn't advertising), and only
+  // scan for a new one if nothing remembered came back.
   async connectFirstAvailable(): Promise<ManagedPrinter> {
+    await this.ensureLoaded();
+    if (this.hasRemembered() && !this.connected) {
+      await this.reconnectRemembered();
+      const back = this.list()[0];
+      if (back) return back;
+    }
     const found = await this.scan();
     const next = found.find((c) => !this.printers.has(c.id));
     if (!next) throw new Error("no new printer found");
@@ -264,13 +271,17 @@ class PrinterManager {
   }
 
   // --- Reconnect ----------------------------------------------------------
-  // Attempt to reconnect the remembered set in the background.
-  async reconnectRemembered(): Promise<void> {
-    if (this.reconnecting) return;
+  // Attempt to reconnect the remembered set (by device id, no scan — works even
+  // when the printer isn't advertising). Returns how many were (re)connected.
+  // Used both for the background reconnect on launch and the foreground
+  // "Connect" button, which tries this before scanning for a new printer.
+  async reconnectRemembered(): Promise<number> {
+    if (this.reconnecting) return 0;
     await this.ensureLoaded();
-    if (this.remembered.length === 0) return;
+    if (this.remembered.length === 0) return 0;
     this.reconnecting = true;
     this.emit();
+    let connected = 0;
     try {
       for (const r of this.remembered) {
         if (this.printers.has(r.id)) continue;
@@ -292,6 +303,7 @@ class PrinterManager {
           mp.testPassed = this.tested.has(r.id);
           this.printers.set(r.id, mp);
           this.emit();
+          connected++;
         } catch (e) {
           this.log(`reconnect ${r.name} failed: ${String((e as Error)?.message ?? e)}`);
         }
@@ -300,6 +312,7 @@ class PrinterManager {
       this.reconnecting = false;
       this.emit();
     }
+    return connected;
   }
 }
 
