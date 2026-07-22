@@ -480,15 +480,18 @@ export default function Pack() {
           [{ itemCode: shown, description: draft.description.trim(), photoUri: photos[0]?.uri ?? "" }, ...r].slice(0, 8),
         );
       }
-      // Hold the (possibly newly-minted) box as the current box and loop back to
-      // a fresh item, with the next label already printing (assign mode).
+      // Hold the (possibly newly-minted) box as the current box and return to
+      // the idle screen. We do NOT mint/print the next label here — the next
+      // label is only reserved and printed when the user deliberately taps
+      // "New item" again (print-on-open), so saving one item never prints the
+      // next one unprompted.
       const nextBox = res.boxCode ?? draft.boxCode;
       void saveCurrentBox(nextBox);
       setPrintStatus("idle");
       setDescribeState("idle");
       setHandWrote(false);
       setDraft({ ...EMPTY, boxCode: nextBox });
-      if (mode === "assign") await mintAndPrint();
+      setFlowOpen(false);
     } catch (e) {
       buzzErr();
       showFlash("error", `Save failed — your entry is kept. ${String((e as Error)?.message ?? e)}`);
