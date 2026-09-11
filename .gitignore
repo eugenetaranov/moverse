@@ -13,6 +13,15 @@ mobile/android/
 mobile/ios/
 dist/
 
+# Supabase local stack artifacts
+supabase/.branches/
+supabase/.temp/
+
+# Web build output
+web/.next/
+web/out/
+web/node_modules/
+
 # Logs & OS cruft
 *.log
 .DS_Store
