@@ -2,7 +2,8 @@
 
 ## 1. Phase 0 — Groundwork (days, do first)
 
-- [ ] 1.1 Rotate the leaked `APP_SECRET` on Vercel; remove it from `mobile/src/config.ts` (temporary env-injected value until auth lands)
+> 1.1 (rotate `APP_SECRET`) moved to `platform-foundation` 1.1.
+
 - [ ] 1.2 Create Supabase projects (staging + production) and Cloudflare R2 buckets (staging + production); record Supabase URLs/keys and R2 endpoint/keys in Vercel env
 - [ ] 1.3 Open the Google Play developer account (starts the identity-verification clock)
 - [ ] 1.4 Set up Stripe account (test mode) and Sentry projects (mobile + web/API)
@@ -11,26 +12,15 @@
 
 ## 2. Phase 1 — Backend: schema, auth, multi-tenant API
 
+> Remaining backend work (auth, provisioning, roles/invites, RLS hardening, API port, photos, codes, describe quota, migration) moved to `platform-foundation` tasks 1–4 and 6.
+
 - [x] 2.1 Write SQL migrations for `orgs`, `memberships`, `jobs`, `boxes`, `items`, `item_boxes`, `photos`, `invites`, `usage` with per-job `item_seq`/`box_seq` and indexes
 - [x] 2.2 Add RLS policies enforcing org isolation on every table; write the cross-tenant CI test (user of org A cannot read org B via any path)
-- [ ] 2.3 Configure Supabase Auth (email+password, magic link, anonymous-for-crew) and a signup trigger that auto-creates the personal org + "My move" job
-- [ ] 2.4 Build the shared API auth helper: verify JWT, resolve membership/role/current job, replace `guard()`; delete the `x-app-secret` path
-- [ ] 2.5 Contract tests for the current endpoint shapes (`/save`, `/items`, `/boxes`, `/item-update`, `/box-update`, deletes, next-codes) captured against the Airtable implementation as the porting baseline
-- [ ] 2.6 Port `lib/moverse.ts` to Supabase + R2: `/save` (job-scoped, idempotency-key upsert, R2 photo upload via S3 SDK), reads with R2 presigned photo URLs, updates, deletes
-- [ ] 2.7 Replace code minting with atomic per-job sequences (`UPDATE … RETURNING`); add batch reservation endpoint for offline use
-- [ ] 2.8 New endpoints: jobs CRUD + archive, org/team management, invite create/revoke/consume, report-token get/regenerate
-- [ ] 2.9 `/describe` protection: per-org daily quota in `usage`, ~1.5 MB payload cap, soft-fail response; per-IP rate limiting on auth/invite/report routes
-- [ ] 2.10 Free-tier limit enforcement in the API (1 active job, item cap per job, describe cap)
-- [ ] 2.11 Airtable → Supabase/R2 migration script (records to Postgres + photo download from Airtable and re-upload to R2) with count-parity check; run against staging, then prod; freeze Airtable
 
 ## 3. Phase 1 — Mobile: auth and tenancy
 
-- [ ] 3.1 Add Supabase client + session persistence to the app; auth screens (sign in, sign up with "company"/"just me" choice, magic link)
-- [ ] 3.2 Switch `mobile/src/api.ts` to `Authorization: Bearer <JWT>`; delete `APP_SECRET` from the client entirely
-- [ ] 3.3 Invite-join flow: deep link + in-app QR scan → display-name-only join → land in crew pack mode
-- [ ] 3.4 Job switcher (admins/owners), locked job header (crew), zero job chrome (personal); persist selected job
-- [ ] 3.5 Settings: team management (invite create/revoke, member list) for owners/admins; sign out; in-app account deletion flow
-- [ ] 3.6 Founder dogfood on staging with migrated real data; fix parity gaps before any beta user
+> Moved to `platform-foundation` tasks 5.x (auth, session, job context, join flow, team settings, account deletion) and 6.3 (dogfood).
+
 
 ## 4. Phase 2 — Offline capture
 

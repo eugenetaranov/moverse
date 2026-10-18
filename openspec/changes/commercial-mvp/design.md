@@ -27,6 +27,8 @@ Target: moving companies as paying customers (crews, many concurrent jobs, clien
 
 ## Decisions
 
+> D2–D4, D7 (codes/idempotency) and D10 are detailed — and in places superseded — by `platform-foundation/design.md` (auth methods, provisioning, roles + crew job assignment, RLS hardening, R2 presigned uploads, code pools, migration). Where they differ, `platform-foundation` wins.
+
 ### D1. Supabase for Postgres + Auth + RLS; Cloudflare R2 for photos
 Supabase supplies the relational database, user auth (email/password + magic link), and row-level security for tenant isolation — the identity + structured-data layer, which stays small and cheap (text rows, generous free MAU). Photos live in **Cloudflare R2**, not Supabase Storage. Rationale: photo serving (gallery browse, client-report views) is the only part of the workload with real volume, and it is *egress-dominated*; R2 charges **zero egress** (vs S3 ~$0.09/GB and Supabase's tight 1 GB storage / 5 GB egress free-tier caps that a handful of real jobs would exhaust). R2 speaks the S3 API, so the app uses the standard AWS S3 SDK with presigned URLs — no lock-in, portable to S3 later by swapping the endpoint. Decoupling photos from Supabase keeps the two cost curves independent: Supabase Pro's flat $25/mo covers DB+auth as customers grow, while photo storage/egress scales on R2 at ~$0.015/GB with no egress line item.
 

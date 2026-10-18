@@ -19,21 +19,16 @@ Moverse works end-to-end as a personal, single-tenant packing app (one Airtable 
 
 ## Capabilities
 
+> Auth, provisioning, orgs/roles/invites, jobs, API security, the Supabase/R2 inventory port, code generation, account deletion and the Airtable migration are specified in the **`platform-foundation`** change. This change covers what builds on top of it.
+
 ### New Capabilities
-- `user-auth`: account signup/login, session handling in mobile and web, in-app account deletion (Play requirement).
-- `org-and-roles`: organizations, memberships, owner/admin/crew roles, crew invite links and QR join flow.
-- `job-management`: jobs (client moves) under an org — create/archive, job switcher, per-job scoping of all inventory, silent "My move" job for personal users.
 - `client-report`: shareable read-only web report per job (boxes, items, photos, statuses) with revocable link and print/PDF layout.
 - `billing-plans`: Stripe subscriptions on the web, per-active-job company pricing, free personal tier with enforced limits, plan gating in the API.
 - `marketing-site`: public landing/signup site with pricing, Stripe Checkout hand-off, privacy policy and terms pages.
-- `api-security`: per-user authenticated API, rate limiting, `/describe` quotas and image payload caps.
 - `offline-capture`: local save queue with retry/sync and cached inventory for browsing without connectivity.
 - `design-system`: shared visual language (color/type/spacing tokens, core components) applied across mobile, report view, and marketing site; Figma library as source of truth, AI tools for concept generation.
 
 ### Modified Capabilities
-- `inventory-store`: storage moves from Airtable (single base, shared token) to Supabase Postgres (records) + R2 (photos); every record tenant-scoped to org/job. **BREAKING**
-- `inventory-read-api`: endpoints require user auth and a job scope instead of the shared secret and global base. **BREAKING**
-- `box-code-generation`: `BOX-nn` / `ITM-nnnn` sequences become per-job and race-free (DB sequences), not global table scans.
 - `app-navigation`: navigation gains org/job context — job switcher for admins, locked single-job pack mode for crew, auth screens at the root.
 - `apk-distribution`: distribution moves from sideloaded GitHub-Release APK to Google Play (release signing, closed testing, production).
 - `item-capture`: saves go through the offline queue; capture flow works in crew mode with job pre-selected.
