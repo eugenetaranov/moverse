@@ -32,7 +32,7 @@ The published build SHALL install on an Android phone (via Google Play for teste
 - **WHEN** a tester installs the app from the Play closed track, signs in, and completes one capture (scan or mint `ITM-*` → photo → description → box → Save)
 - **THEN** the item is persisted to the production backend and appears in Browse and on the job's client report
 
-#### Scenario: Dev sideload build still works
+#### Scenario: Install from the link and save an item
 
-- **WHEN** a developer installs the CI-built sideload APK
-- **THEN** it installs and runs against the configured backend for testing
+- **WHEN** a developer opens the CI release link on the phone, installs the sideload APK, signs in, and completes one capture
+- **THEN** the app runs against its configured backend and the item persists there
