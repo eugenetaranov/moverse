@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Box, clearInventoryCache, deleteItem, loadInventory, updateItem } from "../inventory";
+import { Box, clearInventoryCache, deleteItems as deleteItemsApi, loadInventory, updateItem } from "../inventory";
 import { Button } from "../ui";
 import { colors, radius, space, type as t, HIT } from "../theme";
 
@@ -51,7 +51,7 @@ export async function moveItemsToBox(itemIds: string[], boxCode: string): Promis
 }
 
 export async function deleteItems(itemIds: string[]): Promise<void> {
-  await Promise.all(itemIds.map((itemId) => deleteItem(itemId)));
+  await deleteItemsApi(itemIds);
   clearInventoryCache();
 }
 

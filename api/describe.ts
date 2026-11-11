@@ -1,20 +1,9 @@
 /**
- * POST /describe  { imageBase64 } -> { description }
- * Reachable at /describe via the rewrite in vercel.json.
+ * POST /describe { imageBase64 } -> { description }. 1.5 MB cap, daily org quota (D11).
  */
-import { cfg, guard, json, handleDescribe } from "../lib/moverse";
+import { withAuth } from "../lib/auth";
+import { handleDescribe } from "../lib/describe";
 
 export const config = { runtime: "edge" };
 
-export default async function handler(req: Request): Promise<Response> {
-  const c = cfg();
-  const blocked = guard(req, c);
-  if (blocked) return blocked;
-  try {
-    return await handleDescribe(req, c);
-  } catch (err) {
-    // Never log payloads — they contain photos.
-    console.error("moverse_error", "/describe", (err as Error)?.message);
-    return json({ error: "internal_error" }, 500);
-  }
-}
+export default withAuth(handleDescribe, { job: "required" });

@@ -2,9 +2,9 @@
 
 ## 1. Summary logic and data
 
-- [ ] 1.1 Add the migration `job_summary(job_id)`, a `stable` SQL function returning the per-status box counts, total boxes, items, photos, unboxed items and undescribed items. Verify with a pgTAP test on a seeded job (19 boxes in mixed statuses, 50 items with 4 unboxed and 3 undescribed) that checks every count, and that another job's rows are excluded.
-- [ ] 1.2 Implement `deriveSummary(counts)` in `lib/jobSummary.ts`, covering progress weights, stage rules in order, and next-action selection. Verify with a table-driven unit test covering every scenario in `specs/job-overview/spec.md` (including the 55% case and the empty job).
-- [ ] 1.3 Add the shared fixture table (`lib/jobSummary.fixtures.json`) and a mobile copy, `mobile/src/jobSummary.ts`, tested against the same fixtures. Verify that both test suites pass on identical fixtures.
+- [x] 1.1 Add the migration `job_summary(job_id)`, a `stable` SQL function returning the per-status box counts, total boxes, items, photos, unboxed items and undescribed items. Verify with a pgTAP test on a seeded job (19 boxes in mixed statuses, 50 items with 4 unboxed and 3 undescribed) that checks every count, and that another job's rows are excluded.
+- [x] 1.2 Implement `deriveSummary(counts)` in `lib/jobSummary.ts`, covering progress weights, stage rules in order, and next-action selection. Verify with a table-driven unit test covering every scenario in `specs/job-overview/spec.md` (including the 55% case and the empty job).
+- [x] 1.3 Add the shared fixture table (`lib/jobSummary.fixtures.json`) and a mobile copy, `mobile/src/jobSummary.ts`, tested against the same fixtures. Verify that both test suites pass on identical fixtures.
 
 ## 2. API
 

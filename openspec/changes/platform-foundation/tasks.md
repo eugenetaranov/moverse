@@ -3,14 +3,14 @@
 ## 1. Groundwork
 
 - [ ] 1.1 Rotate the leaked `APP_SECRET` in Vercel and stop shipping it: read it from EAS env until auth lands (D6)
-- [ ] 1.2 Add gitleaks (pre-commit + CI step)
-- [ ] 1.3 `supabase init`; check `config.toml` into git, with email OTP, anonymous sign-ins, password policy and SMTP placeholders (D2)
+- [x] 1.2 Add gitleaks (pre-commit + CI step)
+- [x] 1.3 `supabase init`; check `config.toml` into git, with email OTP, anonymous sign-ins, password policy and SMTP placeholders (D2)
 - [ ] 1.4 Create the staging environment (self-hosted on Proxmox via Cloudflare Tunnel, or Cloud free) and the prod environment (Cloud Pro, EU); create R2 buckets `moverse-dev`/`-staging`/`-prod`; configure custom SMTP (D1)
-- [ ] 1.5 `ci.yml`: typecheck, `supabase start`, `db reset`, `test db` and the API tests, required for merge (D16)
+- [x] 1.5 `ci.yml`: typecheck, `supabase start`, `db reset`, `test db` and the API tests, required for merge (D16)
 
 ## 2. Database
 
-- [ ] 2.1 `0003_hardening.sql` (D7):
+- [x] 2.1 `0003_hardening.sql` (D7):
     - `job_members`
     - composite keys on `item_boxes`/`photos`
     - photo status, thumbnail and key constraint
@@ -18,35 +18,35 @@
     - client-supplied item ids
     - invite `token_hash`, `max_uses`, `uses`, `revoked_at`
     - index cleanup
-- [ ] 2.2 Replace the `0002` policies with per-command policies and column grants per the D7 table; add the helpers `org_role`, `can_access_job` and `accessible_job_ids`
-- [ ] 2.3 `0004_rpcs.sql` privileged RPCs: `provision_account`, `create_invite`, `consume_invite`, `set_member_role`, `remove_member`, `assign_job`, `transfer_ownership`, `leave_org`, `regenerate_report_token`, `consume_describe_quota`, `account_deletion_plan`
-- [ ] 2.4 `0004_rpcs.sql` inventory RPCs: `save_item`, `update_item`, `update_box`, `delete_items`, `move_items`, `reserve_codes`, `create_pending_photo`, `attach_photos` (D9, D12)
-- [ ] 2.5 `storage_deletions` outbox, populated by triggers when photos, items, jobs or orgs are deleted (D8)
-- [ ] 2.6 `0005_cleanup.sql`: `pg_cron` purge of membership-less anonymous users after 24 h, and the expired-pending-photo sweep that queues deletions
-- [ ] 2.7 pgTAP role × table × command matrix with explicit escalation cases, plus RPC behaviour tests (D16)
-- [ ] 2.8 Seed script for local and staging: two orgs with owner, admin, assigned and unassigned crew, and an outsider
+- [x] 2.2 Replace the `0002` policies with per-command policies and column grants per the D7 table; add the helpers `org_role`, `can_access_job` and `accessible_job_ids`
+- [x] 2.3 `0004_rpcs.sql` privileged RPCs: `provision_account`, `create_invite`, `consume_invite`, `set_member_role`, `remove_member`, `assign_job`, `transfer_ownership`, `leave_org`, `regenerate_report_token`, `consume_describe_quota`, `account_deletion_plan`
+- [x] 2.4 `0004_rpcs.sql` inventory RPCs: `save_item`, `update_item`, `update_box`, `delete_items`, `move_items`, `reserve_codes`, `create_pending_photo`, `attach_photos` (D9, D12)
+- [x] 2.5 `storage_deletions` outbox, populated by triggers when photos, items, jobs or orgs are deleted (D8)
+- [x] 2.6 `0005_cleanup.sql`: `pg_cron` purge of membership-less anonymous users after 24 h, and the expired-pending-photo sweep that queues deletions
+- [x] 2.7 pgTAP role × table × command matrix with explicit escalation cases, plus RPC behaviour tests (D16)
+- [x] 2.8 Seed script for local and staging: two orgs with owner, admin, assigned and unassigned crew, and an outsider
 
 ## 3. API core
 
-- [ ] 3.1 Contract tests captured against the current Airtable implementation for `/save`, `/items`, `/boxes`, `/item-update`, `/box-update` and the deletes (baseline)
-- [ ] 3.2 `lib/auth.ts`: JWT verification with `jose` (JWKS + HS256), user-scoped supabase client, `withAuth` with job context and `minRole`, error mapping (D6); delete `guard()` and the `x-app-secret` path
-- [ ] 3.3 `lib/privileged.ts` behind an ESLint `no-restricted-imports` allowlist
-- [ ] 3.4 `lib/r2.ts` with aws4fetch: presign PUT/GET, HEAD, batch delete (D8)
-- [ ] 3.5 Integration test harness: Vitest + local Supabase + MinIO, with helpers that sign in seeded users
+- [x] 3.1 Contract tests captured against the current Airtable implementation for `/save`, `/items`, `/boxes`, `/item-update`, `/box-update` and the deletes (baseline)
+- [x] 3.2 `lib/auth.ts`: JWT verification with `jose` (JWKS + HS256), user-scoped supabase client, `withAuth` with job context and `minRole`, error mapping (D6); delete `guard()` and the `x-app-secret` path
+- [x] 3.3 `lib/privileged.ts` behind an ESLint `no-restricted-imports` allowlist
+- [x] 3.4 `lib/r2.ts` with aws4fetch: presign PUT/GET, HEAD, batch delete (D8)
+- [x] 3.5 Integration test harness: Vitest + local Supabase + MinIO, with helpers that sign in seeded users
 
 ## 4. API endpoints
 
-- [ ] 4.1 `GET /me` with self-heal provisioning, and `POST /account/provision` (D4)
-- [ ] 4.2 `/jobs` (GET, POST) and `/job-update` (rename, archive, unarchive)
-- [ ] 4.3 `/invites` (list, create), `/invite-revoke`, `/invites/consume` (D5)
-- [ ] 4.4 `/members`, `/member-update` (role, remove, assign or unassign job), `/org-transfer`
-- [ ] 4.5 `/photos/upload-url` (D8)
-- [ ] 4.6 Port `/save` to `save_item` with `photoIds[]` and object HEAD verification
-- [ ] 4.7 Port `/items` and `/boxes` (presigned URLs, sorting by `code_seq`), `/item-update`, `/box-update`, `/item-add-photo`, `/item-delete`, `/box-delete`; the contract tests from 3.1 pass
-- [ ] 4.8 `/codes/reserve`; `/next-code` and `/next-box-code` as compatibility wrappers (D12)
-- [ ] 4.9 `/describe`: content-length cap and `consume_describe_quota` (D11)
-- [ ] 4.10 `/account/delete` (D14) and `/account/profile`
-- [ ] 4.11 `/api/cron/storage` (drain `storage_deletions`, every 10 min) with the Vercel cron secret
+- [x] 4.1 `GET /me` with self-heal provisioning, and `POST /account/provision` (D4)
+- [x] 4.2 `/jobs` (GET, POST) and `/job-update` (rename, archive, unarchive)
+- [x] 4.3 `/invites` (list, create), `/invite-revoke`, `/invites/consume` (D5)
+- [x] 4.4 `/members`, `/member-update` (role, remove, assign or unassign job), `/org-transfer`
+- [x] 4.5 `/photos/upload-url` (D8)
+- [x] 4.6 Port `/save` to `save_item` with `photoIds[]` and object HEAD verification
+- [x] 4.7 Port `/items` and `/boxes` (presigned URLs, sorting by `code_seq`), `/item-update`, `/box-update`, `/item-add-photo`, `/item-delete`, `/box-delete`; the contract tests from 3.1 pass
+- [x] 4.8 `/codes/reserve`; `/next-code` and `/next-box-code` as compatibility wrappers (D12)
+- [x] 4.9 `/describe`: content-length cap and `consume_describe_quota` (D11)
+- [x] 4.10 `/account/delete` (D14) and `/account/profile`
+- [x] 4.11 `/api/cron/storage` (drain `storage_deletions`, every 10 min) with the Vercel cron secret
 - [ ] 4.12 Vercel WAF rate-limit rules for `/invites/consume`, `/account/provision` and `/api/*`; `vercel.json` rewrites for the new routes
 
 ## 5. Mobile

@@ -1,6 +1,21 @@
 {
   "private": true,
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "node --import tsx --test lib/*.test.ts",
+    "test:db": "supabase test db",
+    "test:api": "node --import tsx --test --test-concurrency=1 tests/api/*.test.ts",
+    "db:reset": "supabase db reset"
+  },
   "devDependencies": {
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "tsx": "^4.23.15",
+    "typescript": "5.6",
+    "supabase": "3.1.0"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "aws4fetch": "^1.0.20",
+    "jose": "^6.2.17"
   }
 }

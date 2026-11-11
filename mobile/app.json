@@ -36,7 +36,8 @@
           "neverForLocation": true
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-secure-store"
     ]
   }
 }

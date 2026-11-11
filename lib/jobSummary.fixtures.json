@@ -1,0 +1,67 @@
+[
+  {
+    "name": "empty job is not started, 0%",
+    "counts": { "packing": 0, "sealed": 0, "loaded": 0, "delivered": 0, "boxes": 0, "items": 0, "photos": 0, "unboxed": 0, "undescribed": 0 },
+    "progress": 0, "stage": "not_started", "nextAction": "Add your first item"
+  },
+  {
+    "name": "items but no boxes is packing, next action is unboxed items",
+    "counts": { "packing": 0, "sealed": 0, "loaded": 0, "delivered": 0, "boxes": 0, "items": 4, "photos": 2, "unboxed": 4, "undescribed": 1 },
+    "progress": 0, "stage": "packing", "nextAction": "4 items not in a box"
+  },
+  {
+    "name": "single unboxed item uses singular",
+    "counts": { "packing": 0, "sealed": 0, "loaded": 0, "delivered": 0, "boxes": 0, "items": 1, "photos": 0, "unboxed": 1, "undescribed": 1 },
+    "progress": 0, "stage": "packing", "nextAction": "1 item not in a box"
+  },
+  {
+    "name": "loading: all sealed, none loaded",
+    "counts": { "packing": 0, "sealed": 2, "loaded": 0, "delivered": 0, "boxes": 2, "items": 5, "photos": 0, "unboxed": 1, "undescribed": 0 },
+    "progress": 33, "stage": "loading", "nextAction": "2 sealed boxes not loaded"
+  },
+  {
+    "name": "packing in progress: 5 sealed + 1 packing",
+    "counts": { "packing": 1, "sealed": 5, "loaded": 0, "delivered": 0, "boxes": 6, "items": 30, "photos": 30, "unboxed": 0, "undescribed": 0 },
+    "progress": 27, "stage": "packing", "nextAction": "1 box still open"
+  },
+  {
+    "name": "3 boxes still open during packing",
+    "counts": { "packing": 3, "sealed": 9, "loaded": 0, "delivered": 0, "boxes": 12, "items": 140, "photos": 140, "unboxed": 0, "undescribed": 0 },
+    "progress": 25, "stage": "packing", "nextAction": "3 boxes still open"
+  },
+  {
+    "name": "loading: sealed and loaded mixed",
+    "counts": { "packing": 0, "sealed": 1, "loaded": 3, "delivered": 0, "boxes": 4, "items": 20, "photos": 20, "unboxed": 0, "undescribed": 0 },
+    "progress": 58, "stage": "loading", "nextAction": "1 sealed box not loaded"
+  },
+  {
+    "name": "in transit: every box loaded",
+    "counts": { "packing": 0, "sealed": 0, "loaded": 4, "delivered": 0, "boxes": 4, "items": 20, "photos": 20, "unboxed": 0, "undescribed": 0 },
+    "progress": 66, "stage": "in_transit", "nextAction": null
+  },
+  {
+    "name": "mixed statuses: packing + loaded + delivered = 55%, delivering wins over packing",
+    "counts": { "packing": 1, "sealed": 0, "loaded": 1, "delivered": 1, "boxes": 3, "items": 9, "photos": 9, "unboxed": 0, "undescribed": 0 },
+    "progress": 55, "stage": "delivering", "nextAction": "2 boxes not delivered"
+  },
+  {
+    "name": "partly delivered: 17 of 19",
+    "counts": { "packing": 0, "sealed": 0, "loaded": 2, "delivered": 17, "boxes": 19, "items": 50, "photos": 50, "unboxed": 0, "undescribed": 0 },
+    "progress": 96, "stage": "delivering", "nextAction": "2 boxes not delivered"
+  },
+  {
+    "name": "spec counts example: 2 packing, 3 sealed, 4 loaded, 10 delivered",
+    "counts": { "packing": 2, "sealed": 3, "loaded": 4, "delivered": 10, "boxes": 19, "items": 50, "photos": 7, "unboxed": 4, "undescribed": 3 },
+    "progress": 71, "stage": "delivering", "nextAction": "9 boxes not delivered"
+  },
+  {
+    "name": "1 box not delivered uses singular",
+    "counts": { "packing": 0, "sealed": 0, "loaded": 1, "delivered": 5, "boxes": 6, "items": 10, "photos": 0, "unboxed": 0, "undescribed": 0 },
+    "progress": 94, "stage": "delivering", "nextAction": "1 box not delivered"
+  },
+  {
+    "name": "everything delivered is 100%, no next action",
+    "counts": { "packing": 0, "sealed": 0, "loaded": 0, "delivered": 7, "boxes": 7, "items": 33, "photos": 12, "unboxed": 2, "undescribed": 0 },
+    "progress": 100, "stage": "delivered", "nextAction": null
+  }
+]

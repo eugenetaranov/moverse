@@ -1,16 +1,123 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/describe", "destination": "/api/describe" },
-    { "source": "/save", "destination": "/api/save" },
-    { "source": "/next-code", "destination": "/api/next-code" },
-    { "source": "/next-box-code", "destination": "/api/next-box-code" },
-    { "source": "/boxes", "destination": "/api/boxes" },
-    { "source": "/items", "destination": "/api/items" },
-    { "source": "/item-update", "destination": "/api/item-update" },
-    { "source": "/item-add-photo", "destination": "/api/item-add-photo" },
-    { "source": "/box-update", "destination": "/api/box-update" },
-    { "source": "/item-delete", "destination": "/api/item-delete" },
-    { "source": "/box-delete", "destination": "/api/box-delete" }
+    {
+      "source": "/account/company",
+      "destination": "/api/account/company"
+    },
+    {
+      "source": "/account/delete",
+      "destination": "/api/account/delete"
+    },
+    {
+      "source": "/account/profile",
+      "destination": "/api/account/profile"
+    },
+    {
+      "source": "/account/provision",
+      "destination": "/api/account/provision"
+    },
+    {
+      "source": "/box-delete",
+      "destination": "/api/box-delete"
+    },
+    {
+      "source": "/box-update",
+      "destination": "/api/box-update"
+    },
+    {
+      "source": "/boxes",
+      "destination": "/api/boxes"
+    },
+    {
+      "source": "/codes/reserve",
+      "destination": "/api/codes/reserve"
+    },
+    {
+      "source": "/describe",
+      "destination": "/api/describe"
+    },
+    {
+      "source": "/invite-revoke",
+      "destination": "/api/invite-revoke"
+    },
+    {
+      "source": "/invites",
+      "destination": "/api/invites"
+    },
+    {
+      "source": "/invites/consume",
+      "destination": "/api/invites/consume"
+    },
+    {
+      "source": "/item-add-photo",
+      "destination": "/api/item-add-photo"
+    },
+    {
+      "source": "/item-delete",
+      "destination": "/api/item-delete"
+    },
+    {
+      "source": "/item-update",
+      "destination": "/api/item-update"
+    },
+    {
+      "source": "/items",
+      "destination": "/api/items"
+    },
+    {
+      "source": "/job-update",
+      "destination": "/api/job-update"
+    },
+    {
+      "source": "/jobs",
+      "destination": "/api/jobs"
+    },
+    {
+      "source": "/me",
+      "destination": "/api/me"
+    },
+    {
+      "source": "/member-update",
+      "destination": "/api/member-update"
+    },
+    {
+      "source": "/members",
+      "destination": "/api/members"
+    },
+    {
+      "source": "/next-box-code",
+      "destination": "/api/next-box-code"
+    },
+    {
+      "source": "/next-code",
+      "destination": "/api/next-code"
+    },
+    {
+      "source": "/org-leave",
+      "destination": "/api/org-leave"
+    },
+    {
+      "source": "/org-transfer",
+      "destination": "/api/org-transfer"
+    },
+    {
+      "source": "/photos/upload-url",
+      "destination": "/api/photos/upload-url"
+    },
+    {
+      "source": "/report-token",
+      "destination": "/api/report-token"
+    },
+    {
+      "source": "/save",
+      "destination": "/api/save"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/storage",
+      "schedule": "*/10 * * * *"
+    }
   ]
 }

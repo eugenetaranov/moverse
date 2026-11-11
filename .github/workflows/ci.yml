@@ -1,0 +1,67 @@
+name: CI
+
+# Required for merge (platform-foundation D16): secret scan, typecheck, unit
+# tests, then the DB (pgTAP) and API integration suites against a local
+# Supabase stack plus an S3 gateway standing in for R2.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  mobile-typecheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 3.1.0
+      - name: Start Supabase (migrations + seed)
+        run: supabase start -x studio,imgproxy,vector,logflare,realtime,storage-api,edge-runtime,supavisor
+      - name: pgTAP
+        run: supabase test db
+
+      - name: Reset seed for API tests
+        run: supabase db reset
+      - name: Start S3 gateway
+        run: ./scripts/s3-local.sh
+      - name: API integration tests
+        run: npm run test:api

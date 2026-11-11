@@ -37,9 +37,10 @@ import { printers } from "../niimbot/connection";
 import { renderLabel } from "../niimbot/label";
 import { printBoxLabels, NoBoxPrinter, MAX_COPIES } from "../boxLabelPrint";
 import { printItemLabels, NoItemPrinter } from "../itemLabelPrint";
-import { reserveCode, releaseCode, seedReservation } from "../reservation";
-import { reserveBoxCode, seedBoxReservation } from "../boxReservation";
-import { Box, Item, addItemPhoto, loadInventory } from "../inventory";
+import * as Crypto from "expo-crypto";
+import { reserveCode, releaseCode, reserveBoxCode, seedReservation, seedBoxReservation } from "../codes";
+import { Box, Item, loadInventory } from "../inventory";
+import { uploadPhoto } from "../photos";
 import { loadCurrentBox, saveCurrentBox } from "../currentBox";
 import { colors, radius, space, type as t, HIT } from "../theme";
 import {
@@ -54,10 +55,12 @@ import {
 import type { PackStackParamList, RootTabParamList } from "../navTypes";
 
 interface Photo {
+  id: string; // client photo id: re-uploading on a retried save is idempotent
   uri: string;
   base64: string;
 }
 interface Draft {
+  itemId?: string; // assigned on the first save attempt; retries reuse it
   itemCode: string;
   boxCode: string;
   newBox?: boolean; // "No codes" mode: a new box whose BOX-#### is minted at save
@@ -181,7 +184,7 @@ export default function Pack() {
     const wasFirst = draft.photos.length === 0;
     setDraft((d) => ({
       ...d,
-      photos: [...d.photos, { uri: r.photoUri, base64: r.photoBase64 }],
+      photos: [...d.photos, { id: Crypto.randomUUID(), uri: r.photoUri, base64: r.photoBase64 }],
       ...(r.itemCode ? { itemCode: r.itemCode } : {}),
     }));
     setScreen("home"); // returns to the sheet (flowOpen stays true)
@@ -483,27 +486,22 @@ export default function Pack() {
     const code = draft.itemCode.trim();
     const box = draft.boxCode.trim();
     const photos = draft.photos;
+    // Same item id on every retry of this draft, so a save that reached the
+    // server before the connection dropped isn't duplicated.
+    const itemId = draft.itemId ?? Crypto.randomUUID();
+    if (!draft.itemId) setDraft((d) => ({ ...d, itemId }));
     setSaving(true);
     try {
+      // Photos go straight to R2 first; the save attaches them by id.
+      const photoIds = await Promise.all(photos.map((p) => uploadPhoto(p.uri, p.id)));
       const res = await save({
+        itemId,
         itemCode: mode === "none" ? undefined : code,
         boxCode: box || undefined,
         newBox: draft.newBox,
         description: draft.description.trim(),
-        imageBase64: photos[0]?.base64 ?? "",
+        photoIds,
       });
-      // Save takes one photo; upload any extras as additional photos on the
-      // new item. Best-effort — the item is already saved if these fail.
-      let extraFailed = 0;
-      if (res.itemId && photos.length > 1) {
-        for (const p of photos.slice(1)) {
-          try {
-            await addItemPhoto(res.itemId, p.base64);
-          } catch {
-            extraFailed++;
-          }
-        }
-      }
       buzzOk();
       const shown = res.itemCode ?? code;
       const shownBox = res.boxCode ?? box; // may be a server-minted BOX-####
@@ -513,11 +511,7 @@ export default function Pack() {
           : res.action === "added"
             ? `Added ${shown} → ${shownBox}`
             : `Saved ${shown} → ${shownBox}`;
-      if (extraFailed > 0) {
-        showFlash("error", `${base} — ${extraFailed} extra photo${extraFailed === 1 ? "" : "s"} didn't upload`);
-      } else {
-        showFlash("success", base);
-      }
+      showFlash("success", base);
       if (res.action !== "exists") {
         setCount((c) => c + 1);
         // Build a full Item from what we just saved so tapping it in the recent

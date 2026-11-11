@@ -1,0 +1,11 @@
+# gitleaks config (platform-foundation task 1.2). Default rules plus the local
+# Supabase demo keys, which are public and identical on every machine.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-only fixtures"
+paths = [
+  '''supabase/seed\.sql''',
+  '''tests/api/.*''',
+]

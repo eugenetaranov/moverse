@@ -108,10 +108,10 @@ export default function ItemDetail({ route, navigation }: Props) {
   // Append a photo to this item (items can hold more than one).
   async function onPhotoCaptured(r: CaptureResult) {
     setCapturing(false);
-    if (!r.photoBase64) return;
+    if (!r.photoUri) return;
     setUploading(true);
     try {
-      await addItemPhoto(item.itemId, r.photoBase64);
+      await addItemPhoto(item.itemId, r.photoUri);
       setPhotos((prev) => [...prev, r.photoUri]); // optimistic; server urls refresh on reload
       clearInventoryCache();
       buzzOk();

@@ -1,20 +1,9 @@
 /**
- * POST /next-code  -> { nextCode }
- * The next ITM-#### code, one above the highest numeric item code in Airtable.
- * Reachable at /next-code via the rewrite in vercel.json.
+ * POST /next-code -> { nextCode }. Compatibility: reserves one item code (D12).
  */
-import { cfg, guard, json, handleNextCode } from "../lib/moverse";
+import { withAuth } from "../lib/auth";
+import { handleNextCode } from "../lib/codes";
 
 export const config = { runtime: "edge" };
 
-export default async function handler(req: Request): Promise<Response> {
-  const c = cfg();
-  const blocked = guard(req, c);
-  if (blocked) return blocked;
-  try {
-    return await handleNextCode(c);
-  } catch (err) {
-    console.error("moverse_error", "/next-code", (err as Error)?.message);
-    return json({ error: "internal_error" }, 500);
-  }
-}
+export default withAuth(handleNextCode, { job: "required" });
